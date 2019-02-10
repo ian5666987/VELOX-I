@@ -1,0 +1,44 @@
+C51 COMPILER V9.02   OBDH_SYSTEMCONFIG                                                     05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_SYSTEMCONFIG
+OBJECT MODULE PLACED IN obdh_systemconfig.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_systemconfig.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "mccif_buffer.h"
+   4          
+   5          #include "obdh_constant.h"
+   6          #include "obdh_systemconfig.h"
+   7          
+   8          char System_getT1Prescaler(OscGear osc_gear) {
+   9   1              return osc_gear >= oscillator_gear4 ? 12 : 1; //for high gear uses sysclk/12, else uses sysclk
+  10   1      }
+  11          
+  12          char System_getCKCON(OscGear osc_gear) {
+  13   1              return osc_gear >= oscillator_gear4 ? 0x00 : 0x18; //for high gear uses sysclk/12, else uses sysclk for b
+             -oth timer1 and timer0
+  14   1      }
+  15          
+  16          // routine overloads the standard putchar() library function to support
+  17          char putchar(char value) {
+  18   1        Mccif_appendChar(PRINTF_INDEX, value);
+  19   1        return value;
+  20   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     67    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      3    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

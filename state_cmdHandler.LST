@@ -1,0 +1,121 @@
+C51 COMPILER V9.02   STATE_CMDHANDLER                                                      05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_CMDHANDLER
+OBJECT MODULE PLACED IN state_cmdHandler.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_cmdHandler.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "C8051_oscillator.h"
+   6          #include "C8051_reset.h"
+   7          
+   8          #include "shared_general.h"
+   9          #include "shared_obdh.h"
+  10          
+  11          #include "Velox_rtc_support.h"
+  12          #include "Velox_calendar.h"
+  13          #include "Velox_watchdog.h"
+  14          
+  15          #include "comm_imc.h"
+  16          #include "comm_itc.h"
+  17          
+  18          #include "obdh_constant.h"
+  19          #include "obdh_debug.h"
+  20          #include "obdh_globalvariables.h"
+  21          #include "obdh_timekeeper.h"
+  22          #include "obdh_systeminit.h"
+  23          
+  24          #include "hash_manifest.h"
+  25          
+  26          #include "sdcard_generic.h"
+  27          #include "sdcard_redundant.h"
+  28          
+  29          extern char g_c_gearbox_switch;
+  30          
+  31          char State_cmdHandler(char* subtask) {
+  32   1        char dummy_buffer[24];
+  33   1        switch (g_gndCommand.id) {
+  34   2        case 0:
+  35   2          break;
+  36   2        case 1: // imc ---
+  37   2          Comm_rxReset();
+  38   2          break;
+  39   2        case 2: // itc ---
+  40   2          Comm_txReset();
+  41   2          break;
+  42   2      #define   CMDID_BITRATE   3
+  43   2        case CMDID_BITRATE + 0: // itc
+  44   2        case CMDID_BITRATE + 1:
+  45   2        case CMDID_BITRATE + 2:
+  46   2        case CMDID_BITRATE + 3:
+  47   2          Comm_setTxBitrate(g_gndCommand.id - CMDID_BITRATE); // 0 -> 1200, 1 -> 2400, 2 -> 4800, 3 -> 9600
+  48   2          break;
+  49   2        case 7: // itc
+  50   2          // tx_mode == 0x00, or tx_mode == 0x03 are not allowed since would disable uplink/downlink capability
+  51   2          Comm_setTxOutputMode(0x1); // 0x01 - nominal telemetry mode
+  52   2          break;
+  53   2        case 8: // itc
+  54   2          Comm_setTxCwCharRate(g_gndCommand.parameter); // rate = 600/value
+  55   2          break;
+C51 COMPILER V9.02   STATE_CMDHANDLER                                                      05/20/2014 11:03:52 PAGE 2   
+
+  56   2          // ---
+  57   2        case 31:
+  58   2          if (!SD_writeSingleBlock(g_gndCommand.parameter, dummy_buffer, sizeof dummy_buffer))
+  59   2            g_sdcard.write.failures++;
+  60   2          g_sdcard.write.count++;
+  61   2          break;
+  62   2        case 32:
+  63   2          if (!SD_readSingleBlock(g_gndCommand.parameter, dummy_buffer, sizeof dummy_buffer))
+  64   2            g_sdcard.read.failures++;
+  65   2          g_sdcard.read.count++;
+  66   2          break;
+  67   2        case 35: //ian: updated on 20140207 - to support correct initialization
+  68   2              Hash_writeManifest();
+  69   2          break;
+  70   2        case 53: //ian: updated on 20140207 - to support correct initialization
+  71   2              Hash_readManifest();
+  72   2          break;
+  73   2        case 0x70:
+  74   2          C8051_INTERNAL_RESET
+  75   2          break;
+  76   2        case 0x71:
+  77   2          C8051_POWER_ON_RESET
+  78   2          break;
+  79   2        case COMMAND_WATCHDOG_TEST:
+  80   2          EA = 1;
+  81   2          Watchdog_disable();
+  82   2          while (1)
+  83   2            ; // test watchdog mechanism
+  84   2          break;
+  85   2        }
+  86   1        g_gndCommand.id = 0;
+  87   1        // ---
+  88   1        // switching gears is in state to "guarantee" that no i2c communication is going on TODO
+  89   1        if (oscillator_gear0 <= g_c_gearbox_switch && g_c_gearbox_switch <= oscillator_gear8) {
+  90   2          SystemInit_chip(g_c_gearbox_switch);
+  91   2          g_c_gearbox_switch = GEAR_NO_CHANGE;
+  92   2        }
+  93   1        // ---
+  94   1        ++*subtask; // dummy instruction to prevent compiler warning
+  95   1        return 1; // always release this state, otherwise too complicated
+  96   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    365    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     27    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

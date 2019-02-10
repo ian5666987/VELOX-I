@@ -1,0 +1,66 @@
+C51 COMPILER V9.02   PWRS_MUX                                                              12/28/2012 14:31:21 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_MUX
+OBJECT MODULE PLACED IN PWRS_mux.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_mux.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael maintained by anonymous hacker collective
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "C8051_adc.h"
+   6          #include "C8051_delay.h"
+   7          
+   8          #include "Velox_sfrstack.h"
+   9          
+  10          #include "PWRS_port.h"
+  11          #include "PWRS_mux.h"
+  12          #include "PWRS_constant.h"
+  13          
+  14          void Mux_getAll(float pin_mv[8][8], unsigned char no_of_samples) {
+  15   1        unsigned char l_uc_mask[8] = { //
+  16   1            0x7F, // mux_3 = 0 0 0 = mux_1
+  17   1                0x7F, // mux_3 = 0 0 1 = mux_1
+  18   1                0x7F, // mux_3 = 0 1 0 = mux_1
+  19   1                0x7F, // mux_3 = 0 1 1 = mux_1
+  20   1                0x1C, // mux_3 = 1 0 0 = mux_1
+  21   1                0x18, // mux_3 = 1 0 1 = mux_1
+  22   1                0x18, // mux_3 = 1 1 0 = mux_1
+  23   1                0x08 // mux_3 = 1 1 1 = mux_1
+  24   1            };
+  25   1      
+  26   1        char l_c_mux;
+  27   1        char l_c_channel;
+  28   1        // page 118 in datasheet
+  29   1        SFR_pushPage(CONFIG_PAGE);
+  30   1        for (l_c_mux = 0; l_c_mux < 8; l_c_mux++) {
+  31   2          AMUX_SEL_1 = (l_c_mux & 1); //select mux input also (mux % 2)
+  32   2          AMUX_SEL_2 = (l_c_mux >> 1) & 1; // also: (mux / 2) % 2;
+  33   2          AMUX_SEL_3 = (l_c_mux >> 2) & 1;
+  34   2          Delay_us(100);
+  35   2          for (l_c_channel = 0; l_c_channel < MUX_CHANNEL; l_c_channel++) {
+  36   3            pin_mv[l_c_mux][l_c_channel] = 0;
+  37   3            if ((l_uc_mask[l_c_mux] >> l_c_channel) & 1) { // also: if (mask[mux]  & (1<<channel))
+  38   4              pin_mv[l_c_mux][l_c_channel] = ADC0_getAverage_mV(l_c_channel, no_of_samples);
+  39   4            }
+  40   3          }
+  41   2        }
+  42   1        SFR_popPage();
+  43   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    365    ----
+   CONSTANT SIZE    =      8    ----
+   XDATA SIZE       =     14    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

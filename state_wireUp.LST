@@ -1,0 +1,70 @@
+C51 COMPILER V9.02   STATE_WIREUP                                                          05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_WIREUP
+OBJECT MODULE PLACED IN state_wireUp.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_wireUp.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "mccif_local.h"
+   4          
+   5          #include "obdh_constant.h"
+   6          #include "obdh_globalvariables.h"
+   7          
+   8          #include "state_util.h"
+   9          
+  10          extern Statetask g_statetask_downlink;
+  11          
+  12          void StateUplink_releaseAck(); // defined in radioUp
+  13          
+  14          char State_wireUp(char* subtask) {
+  15   1        char release = 0; // default return choice: do not release state, unless specific set (see release = 1; 
+             -instruction below)
+  16   1        char updated;
+  17   1        short length;
+  18   1        if (!g_c_sendAck_flag || g_statetask_downlink.task.mode == timertask_disabled) { // TODO not the final c
+             -riteria
+  19   2          switch (*subtask) {
+  20   3          case 0: // sending request
+  21   3            updated = Mccif_localPoll();
+  22   3            if (updated) {
+  23   4              isRadioUp = 0; //ian 20140310: set this as zero to indicate wired uplink!
+  24   4              if (g_sendAck.xdatSeg.system == mccif_localSystem)
+  25   4                release = 1;
+  26   4              else
+  27   4                ++*subtask;
+  28   4            } else
+  29   3              release = 1;
+  30   3            break;
+  31   3          case 1:
+  32   3            if (StateUtil_peek(&length, &release) == reply_success) {
+  33   4              StateUplink_releaseAck(); // indicate to gnd station that uplink command has been received and rea
+             -ched target
+  34   4              release = 1;
+  35   4            }
+  36   3            break;
+  37   3          }
+  38   2        } else
+  39   1          release = 1;
+  40   1        return release;
+  41   1      }
+  42          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    200    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      7    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+C51 COMPILER V9.02   STATE_WIREUP                                                          05/20/2014 11:03:53 PAGE 2   
+
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,71 @@
+C51 COMPILER V9.02   VELOX_UPTIME                                                          05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_UPTIME
+OBJECT MODULE PLACED IN Velox_uptime.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_uptime.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "Velox_timertask.h"
+   4          #include "Velox_uptime.h"
+   5          
+   6          // local variables only visible to uptime mechanism:
+   7          Timertask uptime_timertask;
+   8          unsigned short uptime_store_count;
+   9          
+  10          // function is called every "uptime_store_period" seconds to allow the subsystems to periodically store es
+             -sential values:
+  11          // total uptime, battery state of charge, attitude, ...
+  12          void Uptime_storeVitals_Override();
+  13          
+  14          // call with tai_time=TAI_TIME_UNAVAILABLE is absolute time is not available during initialization
+  15          void Uptime_init(unsigned long tai_time, unsigned long uptime_total, unsigned short period) {
+  16   1        uptime.tai_time = tai_time;
+  17   1        uptime.total = uptime_total;
+  18   1        uptime.storePeriod = period;
+  19   1        uptime.session = 0;
+  20   1        Timertask_setPeriodic(&uptime_timertask, 1000); // the second counter is notified every 1000 ms
+  21   1        uptime_store_count = 0;
+  22   1      }
+  23          
+  24          // important: since tai_time==0 does not make sense as a time value,
+  25          // we reserve 0 as a value to indicate that absolute time has not been initialized
+  26          char Uptime_isTaiTimeValid() {
+  27   1        return TAI_TIME_UNAVAILABLE != uptime.tai_time;
+  28   1      }
+  29          
+  30          // call in main loop at every least 30 sec, ideally at least every second.
+  31          char Uptime_handler() {
+  32   1        if (Timertask_isReady(&uptime_timertask)) {
+  33   2          if (Uptime_isTaiTimeValid())
+  34   2            ++uptime.tai_time;
+  35   2          ++uptime.total;
+  36   2          ++uptime.session;
+  37   2          ++uptime_store_count;
+  38   2          if (uptime.storePeriod < uptime_store_count) {
+  39   3            uptime_store_count = 0;
+  40   3            Uptime_storeVitals_Override();
+  41   3          }
+  42   2          return 1;
+  43   2        }
+  44   1        return 0;
+  45   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    324    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     17    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+C51 COMPILER V9.02   VELOX_UPTIME                                                          05/20/2014 11:03:53 PAGE 2   
+
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

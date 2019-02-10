@@ -1,0 +1,60 @@
+C51 COMPILER V9.02   VELOX_STRING                                                          12/28/2012 13:46:35 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_STRING
+OBJECT MODULE PLACED IN Velox_string.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_string.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          //-----------------------------------------------------------------------------
+   2          // Function:        unsigned long hexstring2ulong(char* read_buffer, char length)
+   3          // PreCondition:    none
+   4          // Input:           none
+   5          // Output:          Association Indicator given by the AI command
+   6          // Overview:        This function will convert the hexadecimal string into unsigned long numbers
+   7          //-----------------------------------------------------------------------------
+   8          unsigned long hexstring2ulong(char* read_buffer, char length) {
+   9   1        unsigned char charnum;
+  10   1        unsigned long hex_number;
+  11   1        unsigned char temp;
+  12   1        char* buffer_pointer;
+  13   1        char i;
+  14   1        hex_number = 0;
+  15   1        buffer_pointer = read_buffer;
+  16   1        for (i = 0; i < length; i++) {
+  17   2          charnum = *buffer_pointer++;
+  18   2          if (charnum == 0) // null character
+  19   2            return hex_number;
+  20   2          temp = 0;
+  21   2          if ('0' <= charnum && charnum <= '9')
+  22   2            temp = charnum - '0';
+  23   2          else if ('A' <= charnum && charnum <= 'F')
+  24   2            temp = charnum - 'A' + 10;
+  25   2          else if ('a' <= charnum && charnum <= 'f')
+  26   2            temp = charnum - 'a' + 10;
+  27   2          else {
+  28   3            // implement handling of error if desired
+  29   3          }
+  30   2          // ---
+  31   2          hex_number <<= 4; // (<< 4 is times 16)
+  32   2          hex_number += temp;
+  33   2        }
+  34   1        return hex_number;
+  35   1      }
+  36          
+  37          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    270    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     14    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

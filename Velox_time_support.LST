@@ -1,0 +1,12 @@
+C51 COMPILER V9.02   VELOX_TIME_SUPPORT                                                    07/18/2013 07:22:31 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_TIME_SUPPORT
+OBJECT MODULE PLACED IN Velox_time_support.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_time_support.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+*** ERROR C318 OF Velox_time_support.c: can't open file 'Velox_time_support.c'
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  1 ERROR(S)

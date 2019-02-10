@@ -1,0 +1,123 @@
+C51 COMPILER V9.02   C8051_COMPARATOR                                                      12/28/2012 13:46:32 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_COMPARATOR
+OBJECT MODULE PLACED IN C8051_comparator.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_comparator.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          #include "C8051_comparator.h"
+   5          #include "C8051_delay.h"
+   6          
+   7          void Comparator0_close(void) {
+   8   1        char SFRPAGE_SAVE = SFRPAGE;
+   9   1        SFRPAGE = CPT0_PAGE;
+  10   1      
+  11   1        //SFR Definition 10.1. CPT0CN: Comparator0 Control
+  12   1        //  Bit7: CP0EN: Comparator0 Enable Bit.
+  13   1        //  0: Comparator0 Disabled. // 1: Comparator0 Enabled.
+  14   1        //  Bit6: CP0OUT: Comparator0 Output State Flag.
+  15   1        //  0: Voltage on CP0+ < CP0–. //  1: Voltage on CP0+ > CP0–.
+  16   1        //  Bit5: CP0RIF: Comparator0 Rising-Edge Flag.
+  17   1        //  0: No Comparator0 Rising Edge has occurred since this flag was last cleared.
+  18   1        //  1: Comparator0 Rising Edge has occurred.
+  19   1        //  Bit4: CP0FIF: Comparator0 Falling-Edge Flag.
+  20   1        //  0: No Comparator0 Falling-Edge has occurred since this flag was last cleared.
+  21   1        //  1: Comparator0 Falling-Edge has occurred.
+  22   1        //  Bits3–2: CP0HYP1–0: Comparator0 Positive Hysteresis Control Bits.
+  23   1        //  00: Positive Hysteresis Disabled.
+  24   1        //  01: Positive Hysteresis = 5 mV.
+  25   1        //  10: Positive Hysteresis = 10 mV.
+  26   1        //  11: Positive Hysteresis = 15 mV.
+  27   1        //  Bits1–0: CP0HYN1–0: Comparator0 Negative Hysteresis Control Bits.
+  28   1        //  00: Negative Hysteresis Disabled.
+  29   1        //  01: Negative Hysteresis = 5 mV.
+  30   1        //  10: Negative Hysteresis = 10 mV.
+  31   1        //  11: Negative Hysteresis = 15 mV.
+  32   1      
+  33   1        CPT0CN = 0x00;     // Comparator 0 is disabled
+  34   1        Delay_us(20);  // Wait 20us for initialization
+  35   1      
+  36   1        //  SFR Definition 10.2. CPT0MD: Comparator0 Mode Selection
+  37   1        //  Bits7–6: UNUSED. Read = 00b, Write = don’t care.
+  38   1        //  Bit 5: CP0RIE: Comparator 0 Rising-Edge Interrupt Enable Bit.
+  39   1        //  0: Comparator 0 rising-edge interrupt disabled.
+  40   1        //  1: Comparator 0 rising-edge interrupt enabled.
+  41   1        //  Bit 4: CP0FIE: Comparator 0 Falling-Edge Interrupt Enable Bit.
+  42   1        //  0: Comparator 0 falling-edge interrupt disabled.
+  43   1        //  1: Comparator 0 falling-edge interrupt enabled.
+  44   1        //  Bits3–2: UNUSED. Read = 00b, Write = don’t care.
+  45   1        //  Bits1–0: CP0MD1–CP0MD0: Comparator0 Mode Select
+  46   1        //  These bits select the response time for Comparator0
+  47   1      
+  48   1        CPT0MD = 0x03; //disabled both rising and falling edge interrupt, selected lowest power consumption
+  49   1        EIE1 &= 0xCF; //disable CP0 rising and falling edge in interrupt enable register
+  50   1        SFRPAGE = SFRPAGE_SAVE;
+  51   1      }
+  52          
+  53          void Comparator1_close(void) {
+  54   1        char SFRPAGE_SAVE = SFRPAGE;
+  55   1        SFRPAGE = CPT1_PAGE;
+C51 COMPILER V9.02   C8051_COMPARATOR                                                      12/28/2012 13:46:32 PAGE 2   
+
+  56   1      
+  57   1        //  SFR Definition 10.3. CPT1CN: Comparator1 Control
+  58   1        //  Bit7: CP1EN: Comparator1 Enable Bit.
+  59   1        //  0: Comparator1 Disabled.
+  60   1        //  1: Comparator1 Enabled.
+  61   1        //  Bit6: CP1OUT: Comparator1 Output State Flag.
+  62   1        //  0: Voltage on CP1+ < CP1–.
+  63   1        //  1: Voltage on CP1+ > CP1–.
+  64   1        //  Bit5: CP1RIF: Comparator1 Rising-Edge Flag.
+  65   1        //  0: No Comparator1 Rising Edge has occurred since this flag was last cleared.
+  66   1        //  1: Comparator1 Rising Edge has occurred.
+  67   1        //  Bit4: CP1FIF: Comparator1 Falling-Edge Flag.
+  68   1        //  0: No Comparator1 Falling-Edge has occurred since this flag was last cleared.
+  69   1        //  1: Comparator1 Falling-Edge Interrupt has occurred.
+  70   1        //  Bits3–2: CP1HYP1–0: Comparator1 Positive Hysteresis Control Bits.
+  71   1        //  00: Positive Hysteresis Disabled.
+  72   1        //  01: Positive Hysteresis = 5 mV.
+  73   1        //  10: Positive Hysteresis = 10 mV.
+  74   1        //  11: Positive Hysteresis = 15 mV.
+  75   1        //  Bits1–0: CP1HYN1–0: Comparator1 Negative Hysteresis Control Bits.
+  76   1        //  00: Negative Hysteresis Disabled.
+  77   1        //  01: Negative Hysteresis = 5 mV.
+  78   1        //  10: Negative Hysteresis = 10 mV.
+  79   1        //  11: Negative Hysteresis = 15 mV.
+  80   1      
+  81   1        CPT1CN = 0x00; // Comparator 1 is disabled
+  82   1        Delay_us(20);  // Wait 20us for initialization
+  83   1        //  SFR Definition 10.4. CPT1MD: Comparator1 Mode Selection
+  84   1        //  Bits7–6: UNUSED. Read = 00b, Write = don’t care.
+  85   1        //  Bit 5: CP1RIE: Comparator 1 Rising-Edge Interrupt Enable Bit.
+  86   1        //  0: Comparator 1 rising-edge interrupt disabled.
+  87   1        //  1: Comparator 1 rising-edge interrupt enabled.
+  88   1        //  Bit 4: CP1FIE: Comparator 0 Falling-Edge Interrupt Enable Bit.
+  89   1        //  0: Comparator 1 falling-edge interrupt disabled.
+  90   1        //  1: Comparator 1 falling-edge interrupt enabled.
+  91   1        //  Bits3–2: UNUSED. Read = 00b, Write = don’t care.
+  92   1        //  Bits1–0: CP1MD1–CP1MD0: Comparator1 Mode Select
+  93   1        //  These bits select the response time for Comparator1.
+  94   1      
+  95   1        CPT1MD = 0x03; //disabled both rising and falling edge interrupt, selected lowest power consumption
+  96   1        EIE1 &= 0x3F; //disable CP1 rising and falling edge in interrupt enable register
+  97   1        SFRPAGE = SFRPAGE_SAVE;
+  98   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     66    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      2    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

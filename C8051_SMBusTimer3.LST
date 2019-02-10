@@ -1,0 +1,77 @@
+C51 COMPILER V9.02   C8051_SMBUSTIMER3                                                     05/20/2014 11:03:50 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_SMBUSTIMER3
+OBJECT MODULE PLACED IN C8051_SMBusTimer3.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_SMBusTimer3.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #define interrupt(x)     interrupt x
+   4          
+   5          #include <c8051F120.h>
+   6          
+   7          sfr16 RCAP3 = 0xCA; // Timer 3 capture/reload
+   8          sfr16 TMR3 = 0xCC; // Timer 3
+   9          
+  10          #define EIE2_ET3    0x01
+  11          
+  12          volatile unsigned short SMBusTimer3_count = 0;
+  13          
+  14          unsigned short SMBusTimer3_getTimeoutCount() {
+  15   1        unsigned short count;
+  16   1        char EIE2_SAVE = EIE2 & EIE2_ET3;
+  17   1        EIE2 &= 0xFE; // 1111 1110
+  18   1        count = SMBusTimer3_count;
+  19   1        EIE2 |= EIE2_SAVE;
+  20   1        return count;
+  21   1      }
+  22          
+  23          void SMBusTimer3_init(long sys_clk) {
+  24   1        char SFRPAGE_SAVE = SFRPAGE;
+  25   1        SFRPAGE = TMR3_PAGE;
+  26   1        TMR3CN = 0x00; // Timer3 external enable off; Timer3 in timer mode; Timer3 in auto-reload mode
+  27   1        if (sys_clk > 25000000L) { //for high gear
+  28   2          TMR3CF = 0x00; // Timer3 uses sysclk/12; Timer3 output not available; Timer3 counts up
+  29   2          sys_clk /= 12; // = 12*40 (later)
+  30   2        } else
+  31   1          TMR3CF = 0x08; // Timer3 uses sysclk; Timer3 output not available; Timer3 counts up
+  32   1        sys_clk /= 40;
+  33   1        if (0xFFFF < sys_clk)
+  34   1          RCAP3 = 0x0000;
+  35   1        else
+  36   1          RCAP3 = -sys_clk; // Timer 3 configured to overflow after
+  37   1        TMR3 = RCAP3; // ~25ms (for SMBus low timeout detect) (1/0.025 = 40)
+  38   1        EIE2 |= EIE2_ET3; // Timer3 interrupt enable
+  39   1        TR3 = 1; // Start Timer3
+  40   1        SFRPAGE = SFRPAGE_SAVE; // Restore SFR page detector
+  41   1      }
+  42          
+  43          // A Timer3 interrupt indicates an SMBus SCL low timeout.
+  44          SMBusTimer3_ISR() interrupt (14) {
+  45   1        char SFRPAGE_SAVE = SFRPAGE;
+  46   1        SFRPAGE = SMB0_PAGE;
+  47   1        SMB0CN &= ~0x40; // Disable SMBus
+  48   1        SMB0CN |= 0x40; // Re-enable SMBus
+  49   1        SFRPAGE = SFRPAGE_SAVE; // Switch back to the Timer3 SFRPAGE
+  50   1        ++SMBusTimer3_count;
+  51   1        TF3 = 0; // Clear Timer3 interrupt-pending flag
+  52   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+C51 COMPILER V9.02   C8051_SMBUSTIMER3                                                     05/20/2014 11:03:50 PAGE 2   
+
+   CODE SIZE        =    300    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     11    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,153 @@
+C51 COMPILER V9.02   STATE_XDATSEGGET                                                      05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_XDATSEGGET
+OBJECT MODULE PLACED IN state_xdatSegGet.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_xdatSegGet.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          #include <string.h>
+   5          //#include <stdio.h>
+   6          
+   7          #include "c8051_SMBus.h"
+   8          
+   9          #include "Velox_slowtask.h"
+  10          #include "Velox_uart.h"
+  11          
+  12          #include "mccif_active.h"
+  13          #include "mccif_xdata.h"
+  14          
+  15          #include "shared_general.h"
+  16          #include "shared_pwrs.h"
+  17          
+  18          #include "comm_generic.h"
+  19          
+  20          #include "hash_frame.h"
+  21          #include "hash_util.h"
+  22          
+  23          #include "obdh_constant.h"
+  24          #include "obdh_globalvariables.h"
+  25          #include "obdh_recon.h"
+  26          
+  27          #include "state_util.h"
+  28          
+  29          // state "xdatSegGet" collects all packets for
+  30          // 1) periodically storing on sd card (private_xdatSegSdStorage)
+  31          // 2) downlink as real time housekeeping data (private_xdatSegPropagate)
+  32          // 3) debug monitoring (Recon_debugPrint)
+  33          // ---
+  34          
+  35          // 1) periodic storing on sd card
+  36          void private_xdatSegSdStorage(char index, void* buffer, short length) {
+  37   1        if (index == 0 && g_putFrame.putIterator == putIterator_active) { // can cancel SD card storage iteratio
+             -n?
+  38   2          g_putFrame.putIterator = putIterator_inactive; // stop log sequence
+  39   2          ++g_putFrame.frameIndex.page; // prepare next page address
+  40   2          g_putFrame.frameIndex.page %= g_hashFrame.pages; // display of page shall not exceed total number of p
+             -ages
+  41   2        }
+  42   1        // ---
+  43   1        if (Slowtask_isReady(&g_putFrame.task)) // opportunity to change from SDcard inactive to fused, otherwis
+             -e deliberately let opportunity slip
+  44   1          if (g_putFrame.putIterator == putIterator_inactive) // change from inactive ...
+  45   1            g_putFrame.putIterator = putIterator_fused; // ... to fused
+  46   1        // ---
+  47   1        if (index == 0 && g_putFrame.putIterator == putIterator_fused) // if new cycle has just started, and SD 
+             -card is marked for storage
+  48   1          g_putFrame.putIterator = putIterator_active; // iterator is marked for active logging
+  49   1        // ---
+  50   1        if (SDCard_isAvailable() && g_putFrame.putIterator == putIterator_active) { // only store under these co
+             -nditions
+C51 COMPILER V9.02   STATE_XDATSEGGET                                                      05/20/2014 11:03:53 PAGE 2   
+
+  51   2          g_putFrame.frameIndex.index = index; // store index for next comparison
+  52   2          if ((g_putFrame.mask & (1L << index)) != 0L)
+  53   2            Hash_putFrame(&g_putFrame.frameIndex, buffer, length);
+  54   2        }
+  55   1      }
+  56          
+  57          // 2) downlink as real time housekeeping data
+  58          void private_xdatSegPropagate(char index, void* buffer, short length) {
+  59   1        unsigned long bitmask;
+  60   1        if (!g_rtHk.hasNext) { // frame buffer is empty
+  61   2          bitmask = 1L << index;
+  62   2          if ((g_rtHk.mask_now & bitmask) != 0L) { // ground station has selected frame for downlink
+  63   3            g_rtHk.mask_now ^= bitmask;
+  64   3            memcpy(txframeRelay, buffer, length);
+  65   3            g_rtHk.hasNext = 1;
+  66   3          }
+  67   2        }
+  68   1      }
+  69          
+  70          volatile char xdatSeg_cycle = -1; // so that first index is 0
+  71          
+  72          // this task helps to monitor the parameters of all subsystems during development
+  73          // the monitoring happens at a high frequency
+  74          // the sd card storage happens at a low frequency
+  75          char State_xdatSegGet(char* subtask) {
+  76   1        char release = 0; // default return choice: do not release state, unless specific set (see release = 1; 
+             -instruction below)
+  77   1        char address;
+  78   1        short length;
+  79   1        unsigned long bitmask;
+  80   1        switch (*subtask) {
+  81   2        case 0: // sending request
+  82   2          ++xdatSeg_cycle;
+  83   2          xdatSeg_cycle %= XDATSEG_NUMEL;
+  84   2          address = xdatSeg[xdatSeg_cycle].system;
+  85   2          if (address == mccif_localSystem) {
+  86   3            length = Mccif_formatContent(xdatSeg[xdatSeg_cycle].offset, xdatSeg[xdatSeg_cycle].length, xdata_txb
+             -uffer);
+  87   3            // ---
+  88   3            private_xdatSegSdStorage(xdatSeg_cycle, xdata_txbuffer, length); // sd card storage
+  89   3            private_xdatSegPropagate(xdatSeg_cycle, xdata_txbuffer, length); // prepare for downlink
+  90   3            Recon_debugPrint(xdata_txbuffer, length); // debug monitoring
+  91   3            release = 1;
+  92   3          } else { // xdata segment is on other chip
+  93   3            if (Subsystem_isAvailable(address)) { // only if the subsystem is ON and "available" we will get the
+             - data segment from them
+  94   4              StateUtil_pokeRequestXdata( //
+  95   4                  xdatSeg[xdatSeg_cycle].system, //
+  96   4                  xdatSeg[xdatSeg_cycle].offset, //
+  97   4                  xdatSeg[xdatSeg_cycle].length);
+  98   4              ++*subtask;
+  99   4            } else {
+ 100   4              bitmask = 1L << xdatSeg_cycle;
+ 101   4              if ((g_rtHk.mask_now & bitmask) != 0L)
+ 102   4                g_rtHk.mask_now ^= bitmask; // since system is down, rtHK for this system can not be sent, and i
+             -s therefore considered "sent"
+ 103   4              release = 1; // immediately fail
+ 104   4            }
+ 105   3          }
+ 106   2          break;
+ 107   2        case 1:
+ 108   2          if (StateUtil_peek(&length, &release) == reply_success) {
+C51 COMPILER V9.02   STATE_XDATSEGGET                                                      05/20/2014 11:03:53 PAGE 3   
+
+ 109   3            private_xdatSegSdStorage(xdatSeg_cycle, i2c_rxbuffer, length); // sd card storage
+ 110   3            private_xdatSegPropagate(xdatSeg_cycle, i2c_rxbuffer, length); // prepare for downlink
+ 111   3            Recon_debugPrint(i2c_rxbuffer, length); // debug monitoring
+ 112   3            release = 1;
+ 113   3          }
+ 114   2          break;
+ 115   2        }
+ 116   1        return release;
+ 117   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1245    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     28    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

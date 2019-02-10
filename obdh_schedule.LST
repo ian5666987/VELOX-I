@@ -1,0 +1,117 @@
+C51 COMPILER V9.02   OBDH_SCHEDULE                                                         05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_SCHEDULE
+OBJECT MODULE PLACED IN obdh_schedule.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_schedule.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          #include <string.h>
+   5          
+   6          #include "Velox_checksum.h"
+   7          #include "Velox_uptime.h"
+   8          
+   9          #include "obdh_constant.h"
+  10          #include "obdh_globalvariables.h"
+  11          #include "obdh_schedule.h"
+  12          
+  13          void Schedule_init() {
+  14   1        memset(&schedule, 0, sizeof schedule);
+  15   1        memset(&g_scheduleAdd, 0, sizeof g_scheduleAdd);
+  16   1      }
+  17          
+  18          unsigned char Schedule_size() {
+  19   1        unsigned char size;
+  20   1        for (size = 0; size < SCHEDULE_SIZE_LIMIT; ++size)
+  21   1          if (schedule[size].time == TAI_TIME_UNAVAILABLE)
+  22   1            return size;
+  23   1        return size; // only when scheduler is full
+  24   1      }
+  25          
+  26          char Schedule_holdsEntry() {
+  27   1        return schedule[0].time != TAI_TIME_UNAVAILABLE;
+  28   1      }
+  29          
+  30          void Schedule_swap(unsigned char i1, unsigned char i2) {
+  31   1        ScheduleItem temp;
+  32   1        memcpy(&temp, &schedule[i1], sizeof(ScheduleItem)); // for faster computation memcpy is used instead of 
+             -struct value assignment
+  33   1        memcpy(&schedule[i1], &schedule[i2], sizeof(ScheduleItem));
+  34   1        memcpy(&schedule[i2], &temp, sizeof(ScheduleItem));
+  35   1      }
+  36          
+  37          void Schedule_bubbleSort() { // decent sorting algorithm for our purpose, Selection sort would also be an 
+             -option
+  38   1        char isSwapped;
+  39   1        unsigned char size;
+  40   1        unsigned char index;
+  41   1        if (Schedule_holdsEntry()) // guarantees at least 1 entry in scheduler
+  42   1          do {
+  43   2            isSwapped = 0;
+  44   2            size = Schedule_size(); // size is at least 1, because of Schedule_hasNext() condition
+  45   2            for (index = 1; index < size; ++index)
+  46   2              if (schedule[index - 1].time > schedule[index].time) {
+  47   3                Schedule_swap(index - 1, index);
+  48   3                isSwapped = 1;
+  49   3              }
+  50   2          } while (isSwapped);
+  51   1      }
+  52          
+  53          void Schedule_remove(unsigned char beg, unsigned char end) { //start from 0, end in SCHEDULE_SIZE_LIMIT-1
+C51 COMPILER V9.02   OBDH_SCHEDULE                                                         05/20/2014 11:03:52 PAGE 2   
+
+  54   1        unsigned char index, num;
+  55   1        unsigned char size;
+  56   1        size = Schedule_size();
+  57   1        if (beg < end && end <= size) { //It does not make sense to delete index that does not exist (>= schedul
+             -e_size)
+  58   2          num = end - beg;
+  59   2          for (index = end; index < size; ++index) //For all the left-over element, shift them up
+  60   2            memcpy(&schedule[index - num], &schedule[index], sizeof(ScheduleItem));
+  61   2          for (index = size - num; index < size; ++index) //For all the left-over space, set them to zero
+  62   2            memset(&schedule[index], 0, sizeof(ScheduleItem));
+  63   2        }
+  64   1      }
+  65          
+  66          char Schedule_handleAdd() {
+  67   1        unsigned char size; // 0, 1, ..., SCHEDULE_SIZE_LIMIT-1
+  68   1        char success = 0;
+  69   1        if (g_scheduleAdd.id0 && g_scheduleAdd.id1 && g_scheduleAdd.id0 == g_scheduleAdd.id1) {
+  70   2          g_scheduleAdd.id1 = 0;
+  71   2          size = Schedule_size();
+  72   2          success = size < SCHEDULE_SIZE_LIMIT && Uptime_isTaiTimeValid() && uptime.tai_time <= g_scheduleAdd.it
+             -em.time; // scheduler still has vacant spots and new entry is not 'history'
+  73   2          if (success)
+  74   2            memcpy(&schedule[size], &g_scheduleAdd.item, sizeof(ScheduleItem)); // copy schedule item to global 
+             -schedule
+  75   2          // we deliberately do not memset addEntry to 0 so that gnd station has full flexibility
+  76   2        }
+  77   1        return success;
+  78   1      }
+  79          
+  80          char Schedule_hasNext() { // this function is to be called periodically (ideally, once a second)!!
+  81   1        if (Schedule_holdsEntry()) {
+  82   2          Schedule_bubbleSort(); // the scheduler does not assume schedule is sorted, so that gnd station has th
+             -e option to individually change the time
+  83   2          return schedule[0].time <= uptime.tai_time;
+  84   2        }
+  85   1        return 0;
+  86   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1012    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     31    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

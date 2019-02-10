@@ -1,0 +1,71 @@
+C51 COMPILER V9.02   C8051_SPI0_SHARED                                                     05/20/2014 11:03:50 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_SPI0_SHARED
+OBJECT MODULE PLACED IN C8051_SPI0_shared.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_SPI0_shared.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "C8051_SPI0_shared.h"
+   6          
+   7          short SPI0_failures = 0;
+   8          short SPI0_timeout = 500;
+   9          
+  10          // Configures SPI0 to use 4-wire Single-Master mode. The SPI timing is
+  11          // configured for Mode 0,0 (data centered on first edge of clock phase and
+  12          // SCK line low in idle state). The SPI clock is set to 1.75 MHz. The NSS pin
+  13          // is set to 1.
+  14          // adcs requires spi0cfg = 0x70 because of imu
+  15          // obdh used spi0cfg = 0x40 in the past
+  16          void SPI0_init(long sys_clk, long f_sck_max, unsigned char spi0cfg, short p_timeout) {
+  17   1        char SFRPAGE_SAVE = SFRPAGE;
+  18   1        SFRPAGE = SPI0_PAGE;
+  19   1        // SPI0CFG = 0x70;
+  20   1        // SPI0CN = 0x0D; // 4-Wire Master Mode, NSS pin 1, SPIEN
+  21   1        // The equation for SPI0CKR is (SYSCLK/(2*F_SCK_MAX))-1, but this yields
+  22   1        // a SPI frequency that is slightly more than 2 MHz. But, 2 MHz is the max
+  23   1        // frequency spec of the EEPROM used here. So, the "-1" term is omitted
+  24   1        // in the following usage:
+  25   1        SPI0CKR = sys_clk / (2 * f_sck_max);
+  26   1        SPI0CFG |= spi0cfg; // typically sets SPI as master
+  27   1        NSSMD1 = 1; // 4-Wire Master Mode
+  28   1        NSSMD0 = 1;
+  29   1        SPIEN = 1; // general enable of SPI
+  30   1      
+  31   1        // library works without interrupt!
+  32   1        // do not enable interrupt for SPI!
+  33   1      
+  34   1        SFRPAGE = SFRPAGE_SAVE;
+  35   1        SPI0_timeout = p_timeout;
+  36   1      }
+  37          
+  38          short SPI0_getFailureCount() {
+  39   1        short copy;
+  40   1        char ESPI0_save;
+  41   1        ESPI0_save = EIE1 & ESPI0_MASK;
+  42   1        EIE1 &= ~ESPI0_MASK; // disable spi0 interrupts
+  43   1        copy = SPI0_failures;
+  44   1        EIE1 |= ESPI0_save; // restore previous spi interrupt status
+  45   1        return copy;
+  46   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    151    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     19    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+C51 COMPILER V9.02   C8051_SPI0_SHARED                                                     05/20/2014 11:03:50 PAGE 2   
+
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

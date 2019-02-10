@@ -1,0 +1,102 @@
+C51 COMPILER V9.02   STATE_UTIL                                                            05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_UTIL
+OBJECT MODULE PLACED IN state_util.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_util.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "C8051_SMBus.h"
+   6          #include "C8051_SMBusSpy.h"
+   7          
+   8          #include "Velox_macros.h"
+   9          
+  10          #include "mccif_active.h"
+  11          #include "mccif_spy.h"
+  12          #include "mccif_tools.h"
+  13          #include "mccif_xdata.h"
+  14          
+  15          #include "state_util.h"
+  16          
+  17          XdataSegment stateLastout;
+  18          Timertask g_stateTask; // can be used by any state
+  19          
+  20          char* stateutil_write;
+  21          char* stateutil_read;
+  22          short stateutil_readMax;
+  23          
+  24          void StateUtil_init(void* i2c_write, void* i2c_read, short i2c_readMax) {
+  25   1        stateutil_write = i2c_write;
+  26   1        stateutil_read = i2c_read;
+  27   1        stateutil_readMax = i2c_readMax;
+  28   1      }
+  29          
+  30          void StateUtil_pokeRequestXdata(char system, short offset, short length) {
+  31   1        short size;
+  32   1        size = Mccif_formatRequest(system, offset, length, stateutil_write);
+  33   1        SMBus_setTxBuffer(stateutil_write, size);
+  34   1        SMBus_setRxBuffer(stateutil_read, stateutil_readMax);
+  35   1        SMBus_start(SMB_writeTo, system);
+  36   1        stateLastout.system = system;
+  37   1        stateLastout.offset = offset;
+  38   1        stateLastout.length = length;
+  39   1        Timertask_setExecuteOnce(&g_stateTask, g_intercom.timeout);
+  40   1      }
+  41          
+  42          void StateUtil_pokeSetXdata(char system, short offset, short length, void* value) {
+  43   1        short size;
+  44   1        size = Mccif_formatSet(system, offset, length, value, stateutil_write);
+  45   1        SMBus_setTxBuffer(stateutil_write, size);
+  46   1        SMBus_setGeneralReceiver(1);
+  47   1        SMBus_start(SMB_writeTo, system);
+  48   1        stateLastout.system = system;
+  49   1        stateLastout.offset = offset;
+  50   1        stateLastout.length = 0; // in the reply to poke only system and offset are encoded, while length is pro
+             -jected to 0
+  51   1        Timertask_setExecuteOnce(&g_stateTask, g_intercom.timeout);
+  52   1      }
+  53          
+  54          enum enum_replyResult StateUtil_peek(short* length, char* release) {
+C51 COMPILER V9.02   STATE_UTIL                                                            05/20/2014 11:03:52 PAGE 2   
+
+  55   1        char success;
+  56   1        if (SMBus_isRxComplete(length)) {
+  57   2          success = Mccif_isValidContent(stateutil_read, stateutil_readMax);
+  58   2          success &= stateutil_read[4] == MCCIF_ID_CONTENT;
+  59   2          success &= memcmp(&stateLastout.system, stateutil_read + MCCIF_SYSTEM_OFFSET, sizeof stateLastout) == 
+             -0;
+  60   2          if (success) {
+  61   3            SMBus_setGeneralReceiver(0);
+  62   3            return reply_success;
+  63   3          }
+  64   2          ++g_intercom.invalids; // monitoring only
+  65   2          return reply_invalid; // if reply is no match, can still continue until timeout
+  66   2        } else if (Timertask_isReady(&g_stateTask)) {
+  67   2          SMBus_setGeneralReceiver(0);
+  68   2          g_intercom.lastFailedSystem = stateLastout.system; // monitoring only
+  69   2          ++g_intercom.timeouts;
+  70   2          *release |= 1;
+  71   2          // ---
+  72   2          return reply_timeout;
+  73   2        }
+  74   1        return reply_pending;
+  75   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    739    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     49    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

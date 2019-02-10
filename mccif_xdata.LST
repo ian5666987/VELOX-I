@@ -1,0 +1,83 @@
+C51 COMPILER V9.02   MCCIF_XDATA                                                           05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE MCCIF_XDATA
+OBJECT MODULE PLACED IN mccif_xdata.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE mccif_xdata.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          #include <string.h>
+   5          
+   6          #include "Velox_checksum.h"
+   7          #include "Velox_uart.h"
+   8          #include "Velox_macros.h"
+   9          
+  10          #include "mccif_xdata.h"
+  11          
+  12          char code mccif_xdatMarker[4] = {'X', 'D', 'A', 'T'};
+  13          
+  14          // --- MCCIF_ID_CONTENT
+  15          
+  16          /** buffer needs to hold MCCIF_DATA_OFFSET + length + 2 bytes
+  17           * function inserts memory image into buffer.
+  18           * parameter length is valid for numbers only up to 255 bytes. */
+  19          short Mccif_formatContent(short offset, short length, char* message) {
+  20   1        char xdata* ptr = 0;
+  21   1        unsigned short check;
+  22   1        memcpy(message, mccif_xdatMarker, sizeof mccif_xdatMarker);
+  23   1        message[4] = MCCIF_ID_CONTENT;
+  24   1        message[5] = mccif_localSystem;
+  25   1        message[6] = offset >> 8; // address hi
+  26   1        message[7] = offset; // address lo
+  27   1        message[8] = length; // length lo
+  28   1        memcpy(&message[MCCIF_DATA_OFFSET], ptr + offset, length);
+  29   1        check = Checksum_publish(Checksum_update(message, MCCIF_DATA_OFFSET + length, 0));
+  30   1        memcpy(&message[MCCIF_DATA_OFFSET + length], &check, 2);
+  31   1        return MCCIF_DATA_OFFSET + length + 2;
+  32   1      }
+  33          
+  34          // --- MCCIF_ID_SET
+  35          
+  36          char Mccif_localSet(char* message) { // parameter name required for macro
+  37   1        char success; // name required for macro
+  38   1        short offset, length;
+  39   1        char xdata* ptr = 0;
+  40   1        success = memcmp(message, mccif_xdatMarker, sizeof mccif_xdatMarker) == 0;
+  41   1        success &= message[4] == MCCIF_ID_SET; // set
+  42   1        success &= message[MCCIF_SYSTEM_OFFSET] == mccif_localSystem;
+  43   1        offset = extractFromBuffer(short, message + MCCIF_OFFSET_OFFSET);
+  44   1        length = extractFromBuffer(unsigned char, message + MCCIF_LENGTH_OFFSET);
+  45   1        success &= offset && 0 < length && length <= MCCIF_COMMAND_MAXLEN;
+  46   1        if (success) {
+  47   2          success &= Checksum_isValid(message, MCCIF_DATA_OFFSET + length + 2);
+  48   2          if (success) {
+  49   3            EA = 0;
+  50   3            EA = 0;
+  51   3            memcpy(ptr + offset, &message[MCCIF_DATA_OFFSET], length);
+  52   3            EA = 1;
+  53   3            Mccif_setCompleted_Override(offset);
+  54   3          }
+  55   2        }
+C51 COMPILER V9.02   MCCIF_XDATA                                                           05/20/2014 11:03:51 PAGE 2   
+
+  56   1        return success;
+  57   1      }
+  58          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    891    ----
+   CONSTANT SIZE    =      4    ----
+   XDATA SIZE       =     21    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

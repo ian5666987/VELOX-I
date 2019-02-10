@@ -1,0 +1,87 @@
+C51 COMPILER V9.02   VELOX_STATE                                                           05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_STATE
+OBJECT MODULE PLACED IN Velox_state.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_state.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "Velox_state.h"
+   4          
+   5          #define STATE_CURRENT_EMPTY   (void*) 0
+   6          
+   7          void State_starter(State* state, unsigned short value) {
+   8   1        state->current = STATE_CURRENT_EMPTY;
+   9   1        state->from_clock = Timertask_getClock_Override();
+  10   1        state->subtask = 0;
+  11   1        state->timeout = value;
+  12   1        state->failures = 0;
+  13   1      }
+  14          
+  15          void State_release(State* state) {
+  16   1        if (state->current != STATE_CURRENT_EMPTY) {
+  17   2          state->current->fused = 0; // deactivate current statetask
+  18   2          Timertask_fromNow(&state->current->task); // earliest execution is now + delay
+  19   2        }
+  20   1        state->current = STATE_CURRENT_EMPTY;
+  21   1        state->subtask = 0;
+  22   1      }
+  23          
+  24          char State_isReady(State* state, Statetask* statetask) {
+  25   1        unsigned short delta;
+  26   1        if (state->current) {
+  27   2          delta = Timertask_getClock_Override() - state->from_clock;
+  28   2          if (state->timeout <= delta) {
+  29   3            ++state->failures;
+  30   3            State_timeout_Override(state); // notification that state is about to be canceled
+  31   3            State_release(state); // make sure this culprit is removed
+  32   3            return 0;
+  33   3          }
+  34   2          return state->current == statetask;
+  35   2        }
+  36   1        // --- at this point a new statetask is initialized
+  37   1        state->current = statetask;
+  38   1        state->from_clock = Timertask_getClock_Override();
+  39   1        state->subtask = 0; // this line is probably obsolete, but we keep it to play safe
+  40   1        return 1;
+  41   1      }
+  42          
+  43          // ---
+  44          
+  45          void State_initStatetask(Statetask* statetask, unsigned short delay) {
+  46   1        Timertask_setRepeated(&(*statetask).task, delay);
+  47   1        statetask->fused = 0;
+  48   1      }
+  49          
+  50          char State_isActive(State* state, Statetask* statetask) {
+  51   1        if (Timertask_isReady(&(*statetask).task))
+  52   1          statetask->fused = 1;
+  53   1        if (statetask->fused) // conditions need to be separate
+  54   1          return State_isReady(state, statetask);
+  55   1        return 0;
+C51 COMPILER V9.02   VELOX_STATE                                                           05/20/2014 11:03:53 PAGE 2   
+
+  56   1      }
+  57          
+  58          void State_turing(State* state, Statetask* statetask, char (*state_func)(char*)) {
+  59   1        if (State_isActive(state, statetask))
+  60   1          if (state_func(&state->subtask))
+  61   1            State_release(state);
+  62   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    911    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     36    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

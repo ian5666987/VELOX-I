@@ -1,0 +1,175 @@
+C51 COMPILER V9.02   PWRS_BATTERY                                                          12/28/2012 14:31:20 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_BATTERY
+OBJECT MODULE PLACED IN PWRS_battery.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_battery.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael maintained by JM AUNG
+   2          
+   3          #include <c8051f120.h>
+   4          #include "Velox_sfrstack.h"
+   5          #include "PWRS_main.h"
+   6          #include "PWRS_extern_data.h"
+   7          #include "PWRS_battery.h"
+   8          #include "PWRS_port.h"
+   9          #include "PWRS_thermal.h"
+  10          
+  11          // Battery charging control
+  12          // function: to control the turning on and off of the charge batt port pin
+  13          void Battery_chargingControl() {
+  14   1        unsigned char x;
+  15   1        SFR_pushPage(CONFIG_PAGE);
+  16   1      //  if (g_uc_TURN_OFF_BATT_CTRL_FLAG) {
+  17   1        if (g_str_BATT_CTRL.mode==timertask_executeOnce) { // TODO bad style
+  18   2          BATT_CTRL = 0;
+  19   2        }
+  20   1        // BATT_CHARGE    _LIMIT  == 114 * BATT_CAPACITY * 72
+  21   1        if (g_l_BATT_CHARGE * 100 < g_uc_PWRS_SOCSW_OFF * BATT_FULL_CHARGE) {
+  22   2          // batt charge control, on at 98%
+  23   2          // turn on
+  24   2          if (BATT_CTRL == 0)
+  25   2            //Set initial duty cycle to 50% for MPPT
+  26   2            for (x = 0; x < PVInput_NumEl; x++)
+  27   2              PVInput[x].g_uc_PWM = g_uc_INITIAL_MPPT_PWM_DUTY_CYCLE;
+  28   2          BATT_CTRL = 1;
+  29   2        }
+  30   1        SFR_popPage();
+  31   1      }
+  32          
+  33          //This section is for BATT HEATER
+  34          // g_uc_BATT_HEATER [7:0], MSB:LSB
+  35          // bit7: HT1
+  36          // bit6: HT_EN
+  37          // bit5: HT2 (not used)
+  38          // bit4: HT2_EN (not used)
+  39          // bit 3-0: HT_TEMP
+  40          // On_temp : (8- int(HT_TEMP) ) * 2.5
+  41          // Off_temp: max( 0, On_temp + 5)
+  42          void Battery_setPwrsHt(unsigned char HT_Setting) {
+  43   1      //the following 4 local data variables used for controlling battery heater settings
+  44   1        float l_f_ON_TEMP = (g_uc_ON_TEMP_BIAS - (HT_Setting & 0x0F)) * 2.5; //default:     <5deg    : on ,  >10
+             -deg   :off
+  45   1      //float l_f_ON_TEMP = (17-(HT_Setting & 0x0F)) * 2.5;  //for testing  <27.5deg : on ,  >32.5deg :off
+  46   1        float l_f_OFF_TEMP = l_f_ON_TEMP + 5;
+  47   1        char l_c_BATT_TEMP1 = g_uc_BATT_TEMP_RAW[0] - 50; // TODO this should be in a float with unit Celsius
+  48   1        char l_c_BATT_TEMP2 = g_uc_BATT_TEMP_RAW[1] - 50;
+  49   1      
+  50   1        if ((g_uc_BATT_HEATER & 0x40) == 0) { //HT is disabled
+  51   2          Thermal_setTkOutput(1, 0); //turn off heater
+  52   2        }
+  53   1      
+  54   1      //Turn on BATT_HT condition
+C51 COMPILER V9.02   PWRS_BATTERY                                                          12/28/2012 14:31:20 PAGE 2   
+
+  55   1        if ((l_c_BATT_TEMP1 < l_f_ON_TEMP) || (l_c_BATT_TEMP2 < l_f_ON_TEMP)) //condition based on details given
+             - in PWRS command list
+  56   1            { //if either CELL TEMP is lower than allowed, turn on
+  57   2          if (g_uc_BATT_HEATER & 0x40) { //if EN_HT1 is 1
+  58   3            if (g_uc_TK_RUN[1] == 0) { //means HT already on, just exit from loop
+  59   4              Thermal_setTkOutput(1, 1); //turn on HT
+  60   4            }
+  61   3          } else { //HT is not enabled
+  62   3            if (g_uc_TK_RUN[1] == 1) { //means HT is on
+  63   4              Thermal_setTkOutput(1, 0); //HT not supposed to be ON as HT is not enabled
+  64   4            }
+  65   3            //HT is not running, just exit from loop
+  66   3          }
+  67   2        }
+  68   1      
+  69   1        if (g_uc_TK_RUN[1] == 1) {
+  70   2      //Turn off BATT_HT condition
+  71   2          if (l_f_OFF_TEMP > 0) { //base on condition given in PWRS command-> max(0,HT_ON_TEMP +5)
+  72   3            //in this case,HT_ON_TEMP +5 is max of 0 & HT_ON_TEMP +5)
+  73   3            if ((l_c_BATT_TEMP1 > l_f_OFF_TEMP) && (l_c_BATT_TEMP2 > l_f_OFF_TEMP)) //if both CELL TEMP is large
+             - enough
+  74   3                { //we can turn off heater
+  75   4              Thermal_setTkOutput(1, 0); //off HT regardless of enable bit
+  76   4            }
+  77   3          } else { //base on condition given in PWRS command-> max(0,HT_ON_TEMP +5)
+  78   3            //in this case,0 is max of 0 & HT_ON_TEMP +5)
+  79   3            if ((l_c_BATT_TEMP1 > 0) && (l_c_BATT_TEMP2 > 0)) //if both CELL TEMP is large enough
+  80   3                { //we can turn off heater
+  81   4              Thermal_setTkOutput(1, 0); //off HT regardless of enable bit
+  82   4            }
+  83   3          }
+  84   2        }
+  85   1      
+  86   1      //last step, update status in g_uc_BATT_HEATER variable
+  87   1        if (g_uc_TK_RUN[1] == 1) { //if HT is on
+  88   2          g_uc_BATT_HEATER |= 0x80; //SET HT1 bit
+  89   2        } else { // HT if off
+  90   2          g_uc_BATT_HEATER &= 0x7F; //CLEAR HT1 bit
+  91   2        }
+  92   1      }
+  93          
+  94          // SET_SOC_LIMIT
+  95          // Parameters   : ON_LIMIT: BATT_CHARGE_UPP_LIMIT OFF_LIMIT: BATT_CHARGE_LOW_LIMIT
+  96          // The following code determines the g_uc_PWRS_BATT_CHARGE_STOP_SOC and
+  97          //  g_uc_PWRS_BATT_CHARGE_START_SOC
+  98          void Battery_setSocLimit(unsigned char upp_limit, unsigned char off_limit) {
+  99   1        g_uc_PWRS_SOCSW_ON = upp_limit;
+ 100   1        g_uc_PWRS_SOCSW_OFF = off_limit;
+ 101   1      }
+ 102          
+ 103          void Battery_updateParameters() {
+ 104   1        //g_uc_BATT_CHARGE_TO_ZERO_COUNTER is used to store previous readings of batt charge. This is in respons
+             -e to an issue identified where
+ 105   1        //batt charge suddenly drops to zero under unexpected event. We set up a g_uc_BATT_CHARGE_TO_ZERO_COUNTE
+             -R to keep track of number of
+ 106   1        //consecutive zero samples and will only confirm that the current batt charge has reached zero if there 
+             -are 3 consecutives zero readings
+ 107   1        //ie, g_uc_BATT_CHARGE_TO_ZERO_COUNTER = 3
+ 108   1        static unsigned char g_uc_BATT_CHARGE_TO_ZERO_COUNTER = 0;
+ 109   1      //BATT SOC
+ 110   1      //g_l_BATT_CHARGE MAX = BATT_CAPACITY * 72;
+ 111   1      //g_l_BATT_CHARGE MIN = 0;
+C51 COMPILER V9.02   PWRS_BATTERY                                                          12/28/2012 14:31:20 PAGE 3   
+
+ 112   1      //Update Battery Charge and SOC
+ 113   1        g_l_BATT_CHARGE += g_s_BATT_I; //g_l_BATT_CHARGE
+ 114   1      
+ 115   1        //limit batt charge between MIN -114% and MAX 114%
+ 116   1        g_l_BATT_CHARGE = min(max(MIN_BATT_CHARGE_LIMIT,
+ 117   1                g_l_BATT_CHARGE), MAX_BATT_CHARGE_LIMIT);
+ 118   1        if (!g_uc_TEST_WO_BATT) {
+ 119   2          if ((g_us_BATT_V[0] >= g_us_VCELL_MAX) || (g_us_BATT_V[1] >= g_us_VCELL_MAX)) {
+ 120   3            //full charge condition
+ 121   3            g_l_BATT_CHARGE = BATT_FULL_CHARGE;
+ 122   3            g_uc_PWRS_MODE = perc_100_soc;
+ 123   3            g_str_BATT_CTRL.mode=timertask_executeOnce;
+ 124   3      //      g_uc_TURN_OFF_BATT_CTRL_FLAG = 1; //set this flag to change PWRS_MODE = 2 in timer0 ISR for 30 sec
+             -onds
+ 125   3          }
+ 126   2      
+ 127   2          if ((g_us_BATT_V[0] <= g_us_VCELL_MIN) || (g_us_BATT_V[1] <= g_us_VCELL_MIN)) {
+ 128   3            //no charge condition
+ 129   3            g_uc_BATT_CHARGE_TO_ZERO_COUNTER++;
+ 130   3            if (g_uc_BATT_CHARGE_TO_ZERO_COUNTER == 3) { // 3 is number of retry
+ 131   4              //added this loop to track 3 consecutive VCELL_MIN reading reached
+ 132   4              //before changing batt charge to zero
+ 133   4              g_l_BATT_CHARGE = 0;
+ 134   4              g_uc_BATT_CHARGE_TO_ZERO_COUNTER = 0;
+ 135   4            }
+ 136   3          } else {
+ 137   3            g_uc_BATT_CHARGE_TO_ZERO_COUNTER = 0;
+ 138   3          }
+ 139   2        }
+ 140   1        g_f_BATT_SOC_FLOAT = max(0, (float)g_l_BATT_CHARGE / BATT_FULL_CHARGE );
+ 141   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1289    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     15    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

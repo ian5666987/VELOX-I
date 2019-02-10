@@ -1,0 +1,33 @@
+C51 COMPILER V9.02   C8051_MCUTEMP                                                         05/20/2014 11:03:50 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_MCUTEMP
+OBJECT MODULE PLACED IN C8051_mcutemp.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_mcutemp.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "C8051_adc.h"
+   4          
+   5          // Vtemp = (2.86 mV/'C) * Temp + 776 mV // Refer to AN103 or page 74 in datasheet
+   6          float Mcutemp_inCelsius() {
+   7   1        float adc_mV;
+   8   1        adc_mV = ADC0_getAverage_mV(8, 2);
+   9   1        return (adc_mV - 776.0) / 2.86;
+  10   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     50    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      4    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

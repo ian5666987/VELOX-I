@@ -1,0 +1,94 @@
+C51 COMPILER V9.02   OBDH_AUTH                                                             05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_AUTH
+OBJECT MODULE PLACED IN obdh_auth.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_auth.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "Velox_checksum.h"
+   6          #include "Velox_macros.h"
+   7          #include "Velox_uptime.h"
+   8          
+   9          #include "mccif_xdata.h"
+  10          
+  11          #include "shared_obdh.h"
+  12          
+  13          #include "obdh_auth.h"
+  14          #include "obdh_globalvariables.h"
+  15          
+  16          #define   AUTH_MASK      0xC1A551CAL
+  17          #define   AUTH_SEED_HI   0x1CED
+  18          #define   AUTH_SEED_LO   0xA1A5
+  19          
+  20          void Auth_init() {
+  21   1        memset(&g_auth, 0, sizeof g_auth);
+  22   1      }
+  23          
+  24          char Auth_isPermitted_Override(void* buffer) {
+  25   1        char* message = (char*) buffer;
+  26   1        char success;
+  27   1        short offset;
+  28   1        if (g_slow_gndPass.mode == slowtask_executeOnce) // this means still active
+  29   1          return 1;
+  30   1        success = 1;
+  31   1        success &= extractFromBuffer(unsigned char, message + MCCIF_SYSTEM_OFFSET) == mccif_localSystem;
+  32   1        offset = extractFromBuffer(short, message + MCCIF_OFFSET_OFFSET);
+  33   1        offset -= XDATA_OBDH_PAS_OFFSET;
+  34   1        success &= 0 <= offset && offset < 2; // control, unlock
+  35   1        success &= extractFromBuffer(unsigned char, message + MCCIF_LENGTH_OFFSET) <= 5 - offset;
+  36   1        return success;
+  37   1      }
+  38          
+  39          void Auth_localNotify_Override() {
+  40   1        switch (g_auth.control) {
+  41   2        case auth_normal:
+  42   2          Slowtask_fromNow(&g_slow_gndPass);
+  43   2          break;
+  44   2        case auth_request:
+  45   2          memcpy(&g_auth.keycode, &g_sendAck.uplinkId, sizeof g_auth.keycode);
+  46   2          g_auth.keycode.value ^= AUTH_MASK;
+  47   2          g_auth.keycode.array[0] = Checksum_publish(Checksum_update(&g_auth.keycode, sizeof g_auth.keycode, AUT
+             -H_SEED_HI));
+  48   2          g_auth.keycode.array[1] = Checksum_publish(Checksum_update(&g_auth.keycode, sizeof g_auth.keycode, AUT
+             -H_SEED_LO));
+  49   2          g_auth.unlock = g_auth.keycode.value ^ 1; // important: this instructions has to guarantee inequality 
+             -of unlock and keycode
+  50   2          g_auth.control = auth_inject; // advance as courtesy: after requesting gnd pass, gnd station only has 
+             -to transmit single parameter "unlock"
+  51   2          break;
+C51 COMPILER V9.02   OBDH_AUTH                                                             05/20/2014 11:03:51 PAGE 2   
+
+  52   2        case auth_inject:
+  53   2          if (g_auth.unlock == g_auth.keycode.value) {
+  54   3            if (!g_slow_gndPass.mode) // gnd pass was disabled previously
+  55   3              g_rtHk.mask_now = g_rtHk.template;
+  56   3            Slowtask_setExecuteOnce(&g_slow_gndPass, g_slow_gndPass.delay);
+  57   3            g_auth.control = auth_normal;
+  58   3          }
+  59   2          break;
+  60   2        case auth_expire:
+  61   2          Slowtask_setDisabled(&g_slow_gndPass);
+  62   2          g_rtHk.mask_now = 0; // stop any downlink of real-time housekeeping data
+  63   2          break;
+  64   2        }
+  65   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    620    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      9    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

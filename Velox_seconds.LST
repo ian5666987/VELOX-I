@@ -1,0 +1,36 @@
+C51 COMPILER V9.02   VELOX_SECONDS                                                         05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_SECONDS
+OBJECT MODULE PLACED IN Velox_seconds.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_seconds.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "Velox_screen.h"
+   4          #include "Velox_uptime.h"
+   5          
+   6          char Seconds_haveAdvanced() {
+   7   1        char value;
+   8   1        Screen_capture();
+   9   1        value = Uptime_handler();
+  10   1        if (value) // true once per second
+  11   1          Screen_summary();
+  12   1        return value;
+  13   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     28    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      1    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

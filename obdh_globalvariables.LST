@@ -1,0 +1,171 @@
+C51 COMPILER V9.02   OBDH_GLOBALVARIABLES                                                  05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_GLOBALVARIABLES
+OBJECT MODULE PLACED IN obdh_globalvariables.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_globalvariables.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "Velox_meta.h"
+   6          #include "Velox_runtime.h"
+   7          #include "Velox_uptime.h"
+   8          
+   9          #include "Mccif_signal.h"
+  10          
+  11          #include "Velox_screen.h"
+  12          #include "Velox_rtc_support.h"
+  13          
+  14          #include "comm_generic.h"
+  15          #include "comm_imc.h"
+  16          #include "comm_itc.h"
+  17          #include "sdcard_redundant.h"
+  18          
+  19          #include "shared_obdh.h"
+  20          #include "shared_general.h"
+  21          
+  22          #include "obdh_auth.h"
+  23          #include "obdh_cqt.h"
+  24          #include "obdh_debug.h"
+  25          #include "obdh_globalvariables.h"
+  26          #include "obdh_timekeeper.h"
+  27          #include "obdh_trxuv.h"
+  28          
+  29          #include "hash_blob.h"
+  30          #include "hash_frame.h"
+  31          #include "hash_util.h"
+  32          
+  33          #include "state_util.h"
+  34          
+  35          short xdata g_s_BinaryId _at_ (XDATA_OBDH_CQT_OFFSET + 0);
+  36          char xdata g_c_BinaryType _at_ (XDATA_OBDH_CQT_OFFSET + 2); // for cqt, this has to == blobtype_cqt == 4
+  37          unsigned short xdata g_us_BinaryFrame _at_ (XDATA_OBDH_CQT_OFFSET + 3);
+  38          char xdata g_c_BinaryContent[CQT_RAWDATA] _at_ (XDATA_OBDH_CQT_OFFSET + 5);
+  39          short xdata g_us_BinaryCheck _at_ (XDATA_OBDH_CQT_OFFSET + 216); // this will not be sent as part of the x
+             -data packet (!)
+  40          
+  41          // ---
+  42          
+  43          ScheduleItem xdata schedule[SCHEDULE_SIZE_LIMIT] _at_ (XDATA_OBDH_SC0_OFFSET);
+  44          
+  45          // ---
+  46          
+  47          Statetask xdata g_statetask_pwrsHk _at_ (XDATA_OBDH_STA_OFFSET + 0);
+  48          Statetask xdata g_statetask_adcsHk _at_ (XDATA_OBDH_STA_OFFSET + 6);
+  49          Statetask xdata g_statetask_trxuvHk _at_ (XDATA_OBDH_STA_OFFSET + 12);
+  50          Statetask xdata g_statetask_xdatSegGet _at_ (XDATA_OBDH_STA_OFFSET + 18);
+  51          Statetask xdata g_statetask_wireUp _at_ (XDATA_OBDH_STA_OFFSET + 24);
+  52          Statetask xdata g_statetask_radioUp _at_ (XDATA_OBDH_STA_OFFSET + 30);
+  53          Statetask xdata g_statetask_cmdHandler _at_ (XDATA_OBDH_STA_OFFSET + 36);
+  54          Statetask xdata g_statetask_scheduler _at_ (XDATA_OBDH_STA_OFFSET + 42);
+C51 COMPILER V9.02   OBDH_GLOBALVARIABLES                                                  05/20/2014 11:03:51 PAGE 2   
+
+  55          Statetask xdata g_statetask_downlink _at_ (XDATA_OBDH_STA_OFFSET + 48);
+  56          Statetask xdata g_statetask_ferryCam _at_ (XDATA_OBDH_STA_OFFSET + 54);
+  57          Statetask xdata g_statetask_ferryXBee _at_ (XDATA_OBDH_STA_OFFSET + 60);
+  58          Statetask xdata g_statetask_ferryGps _at_ (XDATA_OBDH_STA_OFFSET + 66);
+  59          Statetask xdata g_statetask_rtcSync _at_ (XDATA_OBDH_STA_OFFSET + 72);
+  60          Statetask xdata g_statetask_powerCqt _at_ (XDATA_OBDH_STA_OFFSET + 78);
+  61          State xdata mainState _at_ (XDATA_OBDH_STA_OFFSET + 84);
+  62          struct struct_trxuv xdata g_trxuv _at_ (XDATA_OBDH_STA_OFFSET + 93); //+22 (which affect the rests of the 
+             -position)
+  63          Timertask xdata g_task_mccif _at_ (XDATA_OBDH_STA_OFFSET + 115);
+  64          
+  65          #if 115 + 5 != XDATA_OBDH_STA_LENGTH
+              #error "out of sync: sta length"
+              #endif
+  68          
+  69          // ---
+  70          
+  71          DECLARE_UPTIME_GLOBALVARIABLES_AT(XDATA_OBDH_MET_OFFSET + 0)
+  72          
+  73          DECLARE_META_GLOBALVARIABLES_AT(XDATA_OBDH_MET_OFFSET + 14)
+  74          // +50
+  75          
+  76          struct struct_sdcard xdata g_sdcard _at_ (XDATA_OBDH_MET_OFFSET + 64); // +15
+  77          struct struct_hashFrame xdata g_hashFrame _at_ (XDATA_OBDH_MET_OFFSET + 79); // +10 (which affect the rest
+             -s of the position)
+  78          struct struct_hashBlob xdata g_hashBlob _at_ (XDATA_OBDH_MET_OFFSET + 89); // +5
+  79          struct struct_getBlob xdata g_getBlob _at_ (XDATA_OBDH_MET_OFFSET + 94); // +26
+  80          
+  81          unsigned short xdata g_us_obdh_channel_status _at_ (XDATA_OBDH_MET_OFFSET + 120);
+  82          unsigned short xdata sd_card_store_failures _at_ (XDATA_OBDH_MET_OFFSET + 122);
+  83          
+  84          Slowtask xdata g_slow_gndPass _at_ (XDATA_OBDH_MET_OFFSET + 124);
+  85          struct struct_gndCommand xdata g_gndCommand _at_ (XDATA_OBDH_MET_OFFSET + 127); // +4
+  86          Slowtask xdata g_slow_beacon _at_ (XDATA_OBDH_MET_OFFSET + 131);
+  87          char xdata g_c_beacon[CONCAT_BEACONPARAM_LENGTH] _at_ (XDATA_OBDH_MET_OFFSET + 134); // keep beacon array 
+             -at the end of packet
+  88          
+  89          struct struct_rtHk xdata g_rtHk _at_ (XDATA_OBDH_MET_OFFSET + 134 + CONCAT_BEACONPARAM_LENGTH); //+13
+  90          char xdata g_c_gearbox_switch _at_ (XDATA_OBDH_MET_OFFSET + 147 + CONCAT_BEACONPARAM_LENGTH); //+1
+  91          
+  92          struct struct_imc xdata g_imc _at_ (XDATA_OBDH_MET_OFFSET + 148 + CONCAT_BEACONPARAM_LENGTH); // + 19
+  93          struct struct_itc xdata g_itc _at_ (XDATA_OBDH_MET_OFFSET + 167 + CONCAT_BEACONPARAM_LENGTH); // + 5
+  94          
+  95          struct struct_putFrame xdata g_putFrame _at_ (XDATA_OBDH_MET_OFFSET + 172 + CONCAT_BEACONPARAM_LENGTH); //
+             - + 13 (following the change, which affects the rests of the position)
+  96          struct struct_getFrame xdata g_getFrame _at_ (XDATA_OBDH_MET_OFFSET + 185 + CONCAT_BEACONPARAM_LENGTH); //
+             - + 12 (following the change, which affects the rests of the position)
+  97          
+  98          #if XDATA_OBDH_MET_LENGTH != 197 + CONCAT_BEACONPARAM_LENGTH
+              #error "out of sync: met length"
+              #endif
+ 101          
+ 102          // ---
+ 103          
+ 104          struct struct_scheduleAdd xdata g_scheduleAdd _at_ (XDATA_OBDH_ADD_OFFSET); // +20
+ 105          
+ 106          // ---
+ 107          
+ 108          struct struct_screen xdata screen _at_ (XDATA_OBDH_EXT_OFFSET + 0); // + 10
+ 109          struct struct_pinFrame xdata g_pinFrame _at_ (XDATA_OBDH_EXT_OFFSET + 10); // + 9 (following the change, w
+             -hich affects the rests of the position)
+ 110          struct struct_manifest xdata g_manifest _at_ (XDATA_OBDH_EXT_OFFSET + 19); // + 8
+C51 COMPILER V9.02   OBDH_GLOBALVARIABLES                                                  05/20/2014 11:03:51 PAGE 3   
+
+ 111          struct struct_intercom xdata g_intercom _at_ (XDATA_OBDH_EXT_OFFSET + 27); // + 7
+ 112          MccifSignal xdata g_obdh_mccifSignal _at_ (XDATA_OBDH_EXT_OFFSET + 34); // + 15 COMM data is gone (24 byte
+             -s)
+ 113          char xdata g_c_sendAck_flag _at_ (XDATA_OBDH_EXT_OFFSET + 49); // + 1
+ 114          char xdata g_c_adcsIsReadyIn _at_ (XDATA_OBDH_EXT_OFFSET + 50); // + 1; // unit = sec
+ 115          struct struct_timekeeper xdata g_timekeeper _at_ (XDATA_OBDH_EXT_OFFSET + 51); // + 14
+ 116          struct struct_cqtInfo xdata g_cqtInfo _at_ (XDATA_OBDH_EXT_OFFSET + 65); // +24
+ 117          char xdata g_c_byPassPowerCheckOnComm _at_ (XDATA_OBDH_EXT_OFFSET + 89);
+ 118          SdConfig xdata g_sdConfig _at_ (XDATA_OBDH_EXT_OFFSET + 90); //+9
+ 119          
+ 120          #if 99 != XDATA_OBDH_EXT_LENGTH
+              #error "out of sync: ext length"
+              #endif
+ 123          
+ 124          // ---
+ 125          
+ 126          struct struct_sendAck xdata g_sendAck _at_ (XDATA_OBDH_ACK_OFFSET); // + 16
+ 127          
+ 128          struct struct_auth xdata g_auth _at_ (XDATA_OBDH_PAS_OFFSET);
+ 129          
+ 130          char xdata isRadioUp;
+ 131          char xdata xdata_txbuffer[FRAME_LENGTH_MAX]; // for instance to compile a frame with local memory for debu
+             -g monitoring
+ 132          char xdata i2c_rxbuffer[FRAME_LENGTH_MAX]; // receives housekeeping data from other subsystems
+ 133          char xdata i2c_txbuffer[FRAME_LENGTH_MAX]; // sending requests for hk data
+ 134          char xdata readbackcopy[FRAME_LENGTH_MAX]; // for immediate verification of sd card write operation
+ 135          char xdata txframeRelay[FRAME_LENGTH_MAX]; // for state xdatSeg to transfer a frame for downlink state
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   ----    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   1191    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

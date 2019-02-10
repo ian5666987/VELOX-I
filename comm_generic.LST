@@ -1,0 +1,60 @@
+C51 COMPILER V9.02   COMM_GENERIC                                                          05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE COMM_GENERIC
+OBJECT MODULE PLACED IN comm_generic.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE comm_generic.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "C8051_SMBus.h"
+   6          
+   7          #include "Velox_delay.h"
+   8          
+   9          #include "comm_generic.h"
+  10          
+  11          char* comm_txbuffer; // sending requests for hk data
+  12          char* comm_rxbuffer; // receives housekeeping data
+  13          short comm_failCount = 0;
+  14          
+  15          // short instructions are typically sent within 1 ms.
+  16          // Delay_blockMs(COMM_SHORT_DELAY_MS); waits between 2-3 ms.
+  17          #define COMM_SHORT_DELAY_MS    2     // used to block briefly for convenience: so that short instructions 
+             -to the comm hardware do not require an external wait mechanism
+  18          // ---
+  19          
+  20          void Comm_sendChars(char address, unsigned char length) {
+  21   1        SMBus_setTxBuffer(comm_txbuffer, length);
+  22   1        SMBus_start(SMB_writeTo, address);
+  23   1        Delay_blockMs(COMM_SHORT_DELAY_MS); // don't remove!
+  24   1      }
+  25          
+  26          void Comm_getChars(char address, unsigned char length) {
+  27   1        SMBus_setRxBuffer(comm_rxbuffer, length);
+  28   1        SMBus_start(SMB_readFrom, address);
+  29   1        Delay_blockMs(COMM_SHORT_DELAY_MS); // don't remove!
+  30   1      }
+  31          
+  32          // initiate comm_txbuffer and comm_rxbuffer pointers
+  33          void Comm_init(char* i2c_txbuffer, char* i2c_rxbuffer) {
+  34   1        comm_txbuffer = i2c_txbuffer;
+  35   1        comm_rxbuffer = i2c_rxbuffer;
+  36   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    158    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     18    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

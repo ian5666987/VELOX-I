@@ -1,0 +1,43 @@
+C51 COMPILER V9.02   COMM_ITC_CW                                                           05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE COMM_ITC_CW
+OBJECT MODULE PLACED IN comm_itc_cw.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE comm_itc_cw.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "comm_generic.h"
+   6          #include "comm_internal.h"
+   7          
+   8          #define ITC_ADDRESS 0xA2
+   9          
+  10          // manual 5.2 page 39:
+  11          
+  12          // DO NOT call this with buffer==i2c_txbuffer!
+  13          // use in combination with Comm_txAx25AndCwGet, to obtain if Comm_txCwPut was successful
+  14          #define ITC_TX_CW_MESSAGE    0x12  // ISIS ITC send CW message
+  15          void Comm_txCwPut(void* buffer, short length) {
+  16   1        comm_txbuffer[0] = ITC_TX_CW_MESSAGE; // send CW frame and getting number of frames in rx buffer
+  17   1        memcpy(&comm_txbuffer[1], buffer, length);
+  18   1        Comm_sendChars(ITC_ADDRESS, 1 + length); //WARNING: if
+  19   1      }
+  20          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    111    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      5    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

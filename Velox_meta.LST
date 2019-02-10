@@ -1,0 +1,72 @@
+C51 COMPILER V9.02   VELOX_META                                                            05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_META
+OBJECT MODULE PLACED IN Velox_meta.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_meta.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          
+   5          #include "C8051_mcutemp.h"
+   6          #include "C8051_SMBus.h"
+   7          #include "C8051_SMBusTimer3.h"
+   8          #include "C8051_SPI0_shared.h"
+   9          #include "C8051_UART0.h"
+  10          #include "C8051_UART1.h"
+  11          
+  12          #include "Velox_macros.h"
+  13          #include "Velox_meta.h"
+  14          #include "Velox_sfrstack.h"
+  15          #include "Velox_watchdog.h"
+  16          
+  17          // preconditions:
+  18          // 1) Oscillator_init() called
+  19          // 2) SFR_init() called
+  20          void Meta_init() {
+  21   1        // c8051
+  22   1        chip_meta.oscillator = Oscillator_getType();
+  23   1        chip_meta.systemFreq = Oscillator_getSystemClock();
+  24   1        SFR_pushPage(LEGACY_PAGE);
+  25   1        chip_meta.resetSource = RSTSRC;
+  26   1        SFR_popPage();
+  27   1        // according to page 182
+  28   1        // Note: When Bit 1 (from 7...0) of RSTSRC is read as '1', all other reset flags are indeterminate.
+  29   1        if (chip_meta.resetSource & 2) // Power-On Reset Flag
+  30   1          chip_meta.resetSource = 2;
+  31   1        // velox
+  32   1        chip_meta.totalResets = 0; // in the init process, the field is updated using permanent storage
+  33   1        chip_meta.watchdogCount = 0; // important init to trace max
+  34   1      }
+  35          
+  36          void Meta_handler() {
+  37   1        // c8051
+  38   1        chip_meta.spi0_failures = SPI0_getFailureCount();
+  39   1        chip_meta.mcuTemperature = Mcutemp_inCelsius();
+  40   1        // velox
+  41   1        SMBus_getStatusCount(chip_meta.smbus_statusCount);
+  42   1        chip_meta.smbus_timeoutCount = SMBusTimer3_getTimeoutCount();
+  43   1        chip_meta.uart0_failureCount = UART0_getRxErrorCount() + UART0_getTxErrorCount();
+  44   1        chip_meta.uart1_failureCount = UART1_getTxErrorCount(); // uart1 does not feature rx error count
+  45   1        chip_meta.watchdogCount = max(chip_meta.watchdogCount, Watchdog_getMaxCount());
+  46   1        chip_meta.sfr_depthStatus = SFR_getMaxDepth();
+  47   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    187    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+C51 COMPILER V9.02   VELOX_META                                                            05/20/2014 11:03:53 PAGE 2   
+
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

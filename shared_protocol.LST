@@ -1,0 +1,12 @@
+C51 COMPILER V9.02   SHARED_PROTOCOL                                                       01/01/2013 19:16:15 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE SHARED_PROTOCOL
+OBJECT MODULE PLACED IN shared_protocol.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE shared_protocol.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+*** ERROR C318 OF shared_protocol.c: can't open file 'shared_protocol.c'
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  1 ERROR(S)

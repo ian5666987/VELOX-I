@@ -1,0 +1,25 @@
+// code by ntu ael
+
+#ifndef SHARED_PSAT_H_
+#define SHARED_PSAT_H_
+
+#define XDATA_PSAT_SYS_OFFSET 200
+#define XDATA_PSAT_SYS_LENGTH 81  // Max 300
+
+#define XDATA_PSAT_HKP_OFFSET 500
+#define XDATA_PSAT_HKP_LENGTH 36  // Max 200
+
+#define XDATA_PSAT_CAL_OFFSET 700
+#define XDATA_PSAT_CAL_LENGTH 46  // Max 300
+
+#define XDATA_PSAT_ETC_OFFSET 1000
+#define XDATA_PSAT_ETC_LENGTH 93  // Max 1500
+
+// P-Sat XBee variables
+#define XDATA_PSAT_XBP_OFFSET 2500
+#define XDATA_PSAT_XBP_LENGTH 47
+
+#define XDATA_PSAT_XBE_OFFSET 2550
+#define XDATA_PSAT_XBE_LENGTH 42
+
+#endif

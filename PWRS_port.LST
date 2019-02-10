@@ -1,0 +1,124 @@
+C51 COMPILER V9.02   PWRS_PORT                                                             12/28/2012 23:30:42 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_PORT
+OBJECT MODULE PLACED IN PWRS_port.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_port.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          #include "Velox_sfrstack.h"
+   5          #include "PWRS_port.h"
+   6          
+   7          void Port_init() {
+   8   1        // P0.0  -  TX0 (UART0), Push-Pull,  Digital
+   9   1        // P0.1  -  RX0 (UART0), Open-Drain, Digital
+  10   1        // P0.2  -  SCK  (SPI0), Open-Drain,  Digital
+  11   1        // P0.3  -  MISO (SPI0), Open-Drain, Digital
+  12   1        // P0.4  -  MOSI (SPI0), Open-Drain,  Digital
+  13   1        // P0.5  -  NSS  (SPI0), Open-Drain,  Digital
+  14   1        // P0.6  -  SDA (SMBus), Open-Drain, Digital
+  15   1        // P0.7  -  SCL (SMBus), Open-Drain, Digital
+  16   1      
+  17   1        // P1.0  -  AIN2.0,     Open-Drain, Analog
+  18   1        // P1.1  -  AIN2.1,     Open-Drain, Analog
+  19   1        // P1.2  -  TX1 (UART1), Push-Pull,  Digital
+  20   1        // P1.3  -  RX1 (UART1), Open-Drain, Digital
+  21   1        // P1.4  -  CEX0 (PCA),  Push-Pull,  Digital
+  22   1        // P1.5  -  CEX1 (PCA),  Push-Pull,  Digital
+  23   1        // P1.6  -  CEX2 (PCA),  Push-Pull,  Digital
+  24   1        // P1.7  -  CEX3 (PCA),  Push-Pull, Digital
+  25   1      
+  26   1        // P2.0  -  CEX4 (PCA),  Push-Pull, Digital
+  27   1        // P2.1  -  CEX5 (PCA),  Push-Pull, Digital
+  28   1        // P2.2  -  ECI,         Open-Drain, Digital
+  29   1        // P2.3  -  CP0 (Cmpr0), Open-Drain,  Digital
+  30   1        // P2.4  -  CP1 (Cmpr1), Open-Drain,  Digital
+  31   1        // P2.5  -  T0 (Timer0), Open-Drain,  Digital
+  32   1        // P2.6  -  INT0 (Tmr0), Open-Drain, Digital
+  33   1        // P2.7  -  T1 (Timer1), Open-Drain,  Digital
+  34   1      
+  35   1        // P3.0  -  INT1 (Tmr1), Open-Drain, Digital
+  36   1        // P3.1  -  T2 (Timer2), Open-Drain, Digital
+  37   1        // P3.2  -  T2EX (Tmr2), Open-Drain, Digital
+  38   1        // P3.3  -  T4 (Timer4), Open-Drain, Digital
+  39   1        // P3.4  -  T4EX (Tmr4), Open-Drain, Digital
+  40   1        // P3.5  -  SYSCLK,      Open-Drain,  Digital
+  41   1        // P3.6  -  CNVSTR0,     Open-Drain, Digital
+  42   1        // P3.7  -  CNVSTR2,     Open-Drain, Digital
+  43   1      
+  44   1        //  EN_5_ADS    = P4^0; //ADS    push pull
+  45   1        //  EN_5_ACS    = P4^1; //ACS    push pull
+  46   1        //  EN_5_PAYL   = P4^2; //PAYL   push pull
+  47   1        //  EN_5_DEPL   = P4^3; //DEPL   push pull
+  48   1        //  EN_COMM     = P4^4; //Comm   open drain
+  49   1        //  EN_SDC_1    = P4^5; //Main SDC with MOSFET open drain
+  50   1        //  EN_SDC_2    = P4^6; //Redundacy SDC with Schottky Diode push pull
+  51   1        //  EN_3V3_PAYL   = P4^7; //3V3 PAYL push pull
+  52   1        //
+  53   1        //  BATT_CTRL   = P5^0;  //BATT Control open drain
+  54   1        //  PWM_SEL_1   = P5^1;  //PWM SEL 1 open drain
+  55   1        //  PWM_SEL_2   = P5^2;  //PWM SEL 2 push pull
+C51 COMPILER V9.02   PWRS_PORT                                                             12/28/2012 23:30:42 PAGE 2   
+
+  56   1        //  AMUX_SEL_1    = P5^3;  //AMUX SEL 1 push pull
+  57   1        //  AMUX_SEL_2    = P5^4;  //AMUX SEL 2 push pull
+  58   1        //  AMUX_SEL_3    = P5^5;  //AMUX SEL 3 push pull
+  59   1        //  OBDH_RESET    = P5^6;  //OBDH_RESET_N input open drain
+  60   1        //  OBDH_OFF_VCC  = P5^7;  //OBDH OFF VCC push pull
+  61   1        //
+  62   1        //  OBDH_FAULT    = P6^0;  //OBDH_FAULT Input - open drain
+  63   1        //  FLT_5V_ADS    = P6^1;  //FLT_5V_ADS Input - open drain
+  64   1        //  FLT_5V_ACS    = P6^2;  //FLT_5V_ACS Input - open drain
+  65   1        //  FLT_5V_PAYL   = P6^3;  //FLT_5V_PAYL Input - open drain
+  66   1        //  FLT_5V_DEPL   = P6^4;  //FLT_5V_DEPL Input - open drain
+  67   1        //  FLT_COMM    = P6^5;  //FLT_COMM Input - open drain
+  68   1        //  PWRGD_1     = P6^6;  //PWRGD_1 Input - open drain
+  69   1        //  PWRGD_2     = P6^7;  //PWRGD_2 Input - open drain
+  70   1        //
+  71   1        //  LED_1     = P7^0;  //LED 1 output push pull
+  72   1        //  LED_2     = P7^1;  //LED 2 output push pull
+  73   1        //  TK_SW_1     = P7^2;  //TK SW1 input open drain
+  74   1        //  TK_SW_2     = P7^3;  //TK SW2 input open drain
+  75   1        //  P7_4      = P7^4;  //spare open drain
+  76   1        //  P7_5      = P7^5;  //spare open drain
+  77   1        //  P7_6      = P7^6;  //spare open drain
+  78   1        //  P7_7      = P7^7;  //spare open drain
+  79   1      
+  80   1        // crossbar enabled, disable weak pushups
+  81   1      //TODO IMPORTANT check opendrain and push-pull for PWRS3.0
+  82   1      
+  83   1        SFR_pushPage(CONFIG_PAGE); //Save current SFR page and set SFR page
+  84   1        XBR0 = 0xF7;
+  85   1        XBR1 = 0xFF;
+  86   1        XBR2 = 0x7D;
+  87   1        P1MDIN = 0xFC;
+  88   1        P1|=0x03; // based on page 240, data bits need to set to 1 for analog pins
+  89   1        P0MDOUT = 0x01;
+  90   1        P1MDOUT = 0xF4;
+  91   1        P2MDOUT = 0x03;
+  92   1        P3MDOUT = 0x00;
+  93   1        P4MDOUT = 0xCF;
+  94   1        P5MDOUT = 0xBC;
+  95   1        P6MDOUT = 0x00;
+  96   1        P7MDOUT = 0x03;
+  97   1      
+  98   1        SFR_popPage(); //Restore SFR page
+  99   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     48    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

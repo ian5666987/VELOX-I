@@ -1,0 +1,116 @@
+C51 COMPILER V9.02   PWRS_RESET                                                            12/28/2012 14:31:20 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_RESET
+OBJECT MODULE PLACED IN PWRS_reset.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_reset.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael maintained by JM
+   2          
+   3          #include <c8051f120.h>
+   4          #include "Velox_raid.h"
+   5          #include "Velox_sfrstack.h"
+   6          #include "PWRS_port.h"
+   7          #include "PWRS_extern_data.h"
+   8          #include "PWRS_reset.h"
+   9          #include "PWRS_constant.h"
+  10          
+  11          // RESET EEPROM COUNTERS
+  12          // The following code resets the respective addresses in EEPROM to their default settings
+  13          void Reset_raid_counters() {
+  14   1        // TODO this does not reset scratchpad !!! discuss what is desired behafioour
+  15   1        // TODO why is this commented out, or why can't we find a good default value ???
+  16   1        //  EEPROM_Write(EEPROM_ADDR_BATT_SOC, 0);
+  17   1        char i;
+  18   1        for (i=0;i<EEPROM_ADDR_LATCH_TOTAL;i++)
+  19   1        Raid_write(EEPROM_ADDR_LATCH_COUNT0+i, 0);
+  20   1      
+  21   1        Raid_write(EEPROM_ADDR_PWRS_RESET_COUNT, 0);
+  22   1        g_l_BATT_CHARGE=BATT_FULL_CHARGE;
+  23   1        Raid_writeChars(EEPROM_ADDR_PWRS_BATT_CHARGE, &g_l_BATT_CHARGE, sizeof g_l_BATT_CHARGE);
+  24   1      //  for (i=0; i<4; i++)
+  25   1      //  Raid_write(EEPROM_ADDR_PWRS_BATT_CHARGE + i , myChar[i]);
+  26   1      }
+  27          char Reset_loadRaid() {
+  28   1        char success = 1;
+  29   1        success&=Raid_readChars(EEPROM_ADDR_LATCH_COUNT0,g_uc_LATCH_COUNT,EEPROM_ADDR_LATCH_TOTAL);
+  30   1        success&=Raid_readChars(EEPROM_ADDR_PWRS_RESET_COUNT,&g_ul_RST_COUNT,4); //read and increment reset coun
+             -t from eeprom at startup
+  31   1        success&=Raid_readChars(EEPROM_ADDR_PWRS_BATT_CHARGE, &g_l_BATT_CHARGE, sizeof g_l_BATT_CHARGE);
+  32   1        return success;
+  33   1      }
+  34          
+  35          // RESET_OBDH
+  36          // Reset OBDH using OFF_VCC pin at PC104
+  37          // Parameters   : Value   : set OFF_VCC 1 or 0
+  38          //                Delay_ms: Delay time in ms before RESET
+  39          void Reset_obdh() {
+  40   1        SFR_pushPage(CONFIG_PAGE);
+  41   1        TK_SW_2 = 1; //Set Test Pin = 1 (default
+  42   1        OBDH_RESET = 0;
+  43   1        SFR_popPage();
+  44   1      
+  45   1        g_str_REVCC_OBDH_TASK.delay=g_us_OBDH_PULL_HIGH_DURATION;
+  46   1        g_str_REVCC_OBDH_TASK.mode=timertask_executeOnce;
+  47   1      }
+  48          
+  49          void Reset_obdh_scheduled(unsigned short Delay_ms) {
+  50   1        SFR_pushPage(CONFIG_PAGE);
+  51   1        TK_SW_2 = 0; //Set Test Pin = 0
+  52   1        SFR_popPage();
+  53   1      
+  54   1        g_str_RESET_OBDH_TASK.delay = Delay_ms;
+C51 COMPILER V9.02   PWRS_RESET                                                            12/28/2012 14:31:20 PAGE 2   
+
+  55   1        g_str_RESET_OBDH_TASK.mode = timertask_executeOnce; //take in delay value into counter
+  56   1      }
+  57          
+  58          // RESET_PWRS (not tested)
+  59          // Parameters   : Delay_ms: Delay time in ms before RESET
+  60          // This function causes an internal software reset to the PWRS board. Important
+  61          // data parameters are saved to eeprom prior to reset(not implemented yet)
+  62          void Reset_pwrs() {
+  63   1      //SFR Definition 13.2. RSTSRC: Reset Source
+  64   1      //Bit4: SWRSF: Software Reset Force and Flag.
+  65   1      //Write: 0: No effect.
+  66   1      //1: Forces an internal reset. RST pin is not effected.
+  67   1      //Read: 0: Source of last reset was not a write to the SWRSF bit.
+  68   1      //1: Source of last reset was a write to the SWRSF bit.
+  69   1          Reset_pwrs_data_backup();
+  70   1          SFR_pushPage(LEGACY_PAGE);
+  71   1          RSTSRC |= 0x10; //Setting bit4 in RSTSRC cause SOFTWARE reset
+  72   1          SFR_popPage();
+  73   1      }
+  74          
+  75          void Reset_pwrs_scheduled(unsigned short Delay_ms) {
+  76   1        SFR_pushPage(CONFIG_PAGE);
+  77   1        TK_SW_2 = 0; //Set Test Pin = 0
+  78   1        SFR_popPage();
+  79   1      
+  80   1        g_str_RESET_PWRS_TASK.delay = Delay_ms;
+  81   1        g_str_RESET_PWRS_TASK.mode = timertask_executeOnce;
+  82   1      }
+  83          
+  84          // PWRS_DATA_BACKUP
+  85          // DATA entered into this function will be back-up into eeprom
+  86          // Frequency of data backup determined by DATA_BACKUP_DELAY constant
+  87          // defined in header
+  88          void Reset_pwrs_data_backup() {
+  89   1        Raid_writeChars(EEPROM_ADDR_PWRS_BATT_CHARGE, &g_l_BATT_CHARGE, sizeof g_l_BATT_CHARGE);
+  90   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    394    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      6    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

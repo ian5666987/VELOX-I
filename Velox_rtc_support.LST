@@ -1,0 +1,74 @@
+C51 COMPILER V9.02   VELOX_RTC_SUPPORT                                                     05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_RTC_SUPPORT
+OBJECT MODULE PLACED IN Velox_rtc_support.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_rtc_support.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "Velox_calendar.h"
+   6          
+   7          #include "rtc_generic.h"
+   8          
+   9          // min 1957-12-31/23:59:25 = 0, max 2094-02-06/06:27:40 = -1
+  10          
+  11          // private
+  12          void Rtc_toCalendar(RtcStamp* rtcStamp, Calendar* calendar) {
+  13   1        calendar->year = 1900 + twoDec2oneHex(rtcStamp->yearMod100);
+  14   1        if (memcmp(calendar, calendar_limit_lo, SIZEOF_CALENDAR) < 0) // below lower limit
+  15   1          calendar->year += 100;
+  16   1        calendar->month = twoDec2oneHex(rtcStamp->month);
+  17   1        calendar->day = twoDec2oneHex(rtcStamp->day);
+  18   1        calendar->hour = twoDec2oneHex(rtcStamp->hour);
+  19   1        calendar->minute = twoDec2oneHex(rtcStamp->minute);
+  20   1        calendar->second = twoDec2oneHex(rtcStamp->second);
+  21   1      }
+  22          
+  23          // used when reading the time from RTC
+  24          unsigned long Rtc_toTai(RtcStamp* rtcStamp) {
+  25   1        Calendar calendar;
+  26   1        Rtc_toCalendar(rtcStamp, &calendar);
+  27   1        return Calendar_toTai(&calendar);
+  28   1      }
+  29          
+  30          // private
+  31          void Rtc_fromCalendar(RtcStamp* rtcStamp, Calendar* calendar) {
+  32   1        unsigned char yearMod100;
+  33   1        rtcStamp->centis = 0;
+  34   1        rtcStamp->second = oneHex2twoDec(calendar->second);
+  35   1        rtcStamp->minute = oneHex2twoDec(calendar->minute);
+  36   1        rtcStamp->hour = oneHex2twoDec(calendar->hour);
+  37   1        rtcStamp->weekday = 0x07; // weekday seems to be irrelevant for the time keeping
+  38   1        rtcStamp->day = oneHex2twoDec(calendar->day);
+  39   1        rtcStamp->month = oneHex2twoDec(calendar->month);
+  40   1        yearMod100 = calendar->year % 100;
+  41   1        rtcStamp->yearMod100 = oneHex2twoDec(yearMod100);
+  42   1      }
+  43          
+  44          // used when setting the time to RTC
+  45          void Rtc_fromTai(RtcStamp* rtcStamp, unsigned long taitime) {
+  46   1        Calendar calendar;
+  47   1        Calendar_fromTai(&calendar, taitime);
+  48   1        Rtc_fromCalendar(rtcStamp, &calendar);
+  49   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1278    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     37    ----
+C51 COMPILER V9.02   VELOX_RTC_SUPPORT                                                     05/20/2014 11:03:53 PAGE 2   
+
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

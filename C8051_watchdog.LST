@@ -1,0 +1,86 @@
+C51 COMPILER V9.02   C8051_WATCHDOG                                                        05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_WATCHDOG
+OBJECT MODULE PLACED IN C8051_watchdog.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_watchdog.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "C8051_watchdog.h"
+   6          
+   7          // This routine initializes the Watchdog Timer for a maximum period of 10.49 ms
+   8          // with WDTCN[2-0] = 111b and SYSCLK = 100 MHz:
+   9          // 4 ^ (3 + WDTCN[2-0]) x SYSCLK = 4 ^ (3 + 7) x 1/(100 MHz) = 10.49 ms
+  10          
+  11          // Overview:        This function initialises the watchdog timer (WDT)
+  12          void Watchdog_init() {
+  13   1        //WDTCN: Watchdog Timer Control
+  14   1        //Bits7-0: WDT Control
+  15   1        //Writing 0xA5 both enables and reloads the WDT.
+  16   1        //Writing 0xDE followed within 4 system clocks by 0xAD disables the WDT.
+  17   1        //Writing 0xFF locks out the disable feature.
+  18   1        //Bit4: Watchdog Status Bit (when Read)
+  19   1        //Reading the WDTCN.[4] bit indicates the Watchdog Timer Status.
+  20   1        //0: WDT is inactive
+  21   1        //1: WDT is active
+  22   1        //Bits2-0: Watchdog Timeout Interval Bits
+  23   1        //The WDTCN.[2:0] bits set the Watchdog Timeout Interval
+  24   1        //When writing these bits, WDTCN.7 must be set to 0.
+  25   1      
+  26   1        //WDTCN.7 must be logic 0 when setting the interval
+  27   1        WDTCN &= 0x7F;
+  28   1        //Set the WDTCN[2-0] to 111b
+  29   1        WDTCN |= 0x07;
+  30   1        //Reset the WDT
+  31   1        WDTCN = 0xA5;
+  32   1      }
+  33          
+  34          // Overview:        This function resets the WDT
+  35          void Watchdog_resetTimer() {
+  36   1        WDTCN = 0xA5; // no need to change SFRPAGE (see page 144)
+  37   1      }
+  38          
+  39          // Overview:        This function will disables the watchdog timer
+  40          void Watchdog_disable() {
+  41   1      //  The writes of 0xDE and 0xAD must occur within 4 clock cycles of each other, or the disable operation i
+             -s
+  42   1      //  ignored. This means that the prefetch engine should be enabled and interrupts should be disabled durin
+             -g
+  43   1      //  this procedure to avoid any delay between the two writes.
+  44   1        // no need to change SFRPAGE (see page 144)
+  45   1        bit EA_SAVE = EA;
+  46   1        EA = 0;
+  47   1        EA = 0;
+  48   1        WDTCN = 0xDE;
+  49   1        WDTCN = 0xAD;
+  50   1        EA = EA_SAVE;
+  51   1      }
+  52          
+  53          // Overview:        This function will locks out the disable feature of the WDT.
+C51 COMPILER V9.02   C8051_WATCHDOG                                                        05/20/2014 11:03:51 PAGE 2   
+
+  54          //                  Once locked out, the disable operation is ignored until the next
+  55          // system reset. Writing 0xFF does not enable or reset the watchdog timer. Applications always
+  56          // intending to use the watchdog should write 0xFF to WDTCN in the initialization code.
+  57          void Watchdog_lockout() {
+  58   1        WDTCN = 0xFF; // no criteria will prevent this from happening, simple as that.
+  59   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     37    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

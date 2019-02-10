@@ -1,0 +1,157 @@
+C51 COMPILER V9.02   PWRS_THERMAL                                                          12/28/2012 14:31:20 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_THERMAL
+OBJECT MODULE PLACED IN PWRS_thermal.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_thermal.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael maintained by BX
+   2          
+   3          #include <c8051f120.h>
+   4          #include "C8051_pca0.h"
+   5          #include "Velox_sfrstack.h"
+   6          #include "PWRS_main.h"
+   7          #include "PWRS_extern_data.h"
+   8          #include "PWRS_thermal.h"
+   9          #include "PWRS_constant.h"
+  10          #include "PWRS_port.h"
+  11          
+  12          //void thermal_knife_setEnabled(char on) {
+  13          //  SFR_push_and_set(PCA0_PAGE);
+  14          //  PCA0CPM3 = on ? 0x42 : 0x40;
+  15          //  SFR_pop();
+  16          //}
+  17          
+  18          void Thermal_knife_enable() {
+  19   1        SFR_pushPage(PCA0_PAGE);
+  20   1        PCA0CPM3 = 0x42;
+  21   1        SFR_popPage();
+  22   1      }
+  23          
+  24          void Thermal_knife_disable() {
+  25   1        SFR_pushPage(PCA0_PAGE);
+  26   1        PCA0CPM3 = 0x40;
+  27   1        SFR_popPage();
+  28   1      }
+  29          
+  30          //void heater_setEnabled(char on) {
+  31          //  SFR_push_and_set(PCA0_PAGE);
+  32          //  PCA0CPM4 = on ? 0x42 : 0x40;
+  33          //  SFR_pop();
+  34          //}
+  35          
+  36          void Thermal_heater_enable() {
+  37   1        SFR_pushPage(PCA0_PAGE);
+  38   1        PCA0CPM4 = 0x42;
+  39   1        SFR_popPage();
+  40   1      }
+  41          
+  42          void Thermal_heater_disable() {
+  43   1        SFR_pushPage(PCA0_PAGE);
+  44   1        PCA0CPM4 = 0x40;
+  45   1        SFR_popPage();
+  46   1      }
+  47          
+  48          // SET_TK_OUTPUT (not tested)
+  49          // Set single thermal knife output
+  50          // Parameters   : Channel 0: Antenna
+  51          //          Channel 1: Solar Panel
+  52          //          Channel 2: Extenable optics
+  53          //          Value 0: OFF
+  54          //          Value 1: ON
+  55          //          Delay_ms: Delay time in ms before turn OFF/ON latch OUTPUT
+C51 COMPILER V9.02   PWRS_THERMAL                                                          12/28/2012 14:31:20 PAGE 2   
+
+  56          void Thermal_setTkOutput(char Channel, char Value) {
+  57   1      
+  58   1        switch (Channel) {
+  59   2        case 0: //Thermal Knife (channel 0)
+  60   2          SFR_pushPage(CONFIG_PAGE);
+  61   2          if (Value == 1) {
+  62   3            g_uc_TK_DUTY_CYCLE[0] = 3; //TODO check why need to initiate?
+  63   3            g_uc_THERMAL_KNIFE &= ~TK1_CUT; //0xFD;
+  64   3            if (TK_SW_1) //read from switch feedback, 0 or 1, update bit in self defined register
+  65   3            { //Bingxuan: if the thermal knife is cut originally before we send any command it is considered as 
+             -error
+  66   4              // the error is indicated by change of g_uc_THERMAL_KNIFE_DELAY can be download form xdata;
+  67   4              g_uc_THERMAL_KNIFE |= TK1_EN; //0x01; // If TK cut already set status to 1
+  68   4              g_uc_THERMAL_KNIFE_DELAY = 1;
+  69   4              g_str_TK_NORMAL.mode = timertask_executeOnce;
+  70   4            } else {
+  71   4              PCA0_setDutyCycle(PCA_THERMALKNIFE, g_uc_TK_DUTY_CYCLE[0]); //set initial thermal knife pwm to be 
+             -1%
+  72   4              Thermal_knife_enable();
+  73   4              g_str_TK_INCREMENT.mode = timertask_periodic;
+  74   4              g_uc_THERMAL_KNIFE |= TK1_EN; //0x01; //Set LSB of self defined register to indicate thermal knife
+             - enabled
+  75   4            }
+  76   3          } else {
+  77   3            //Just update the status not turn off TK until OBDH send command
+  78   3            g_uc_THERMAL_KNIFE_DELAY = 2;
+  79   3            g_str_TK_NORMAL.mode = timertask_executeOnce;
+  80   3      
+  81   3          }
+  82   2          SFR_popPage();
+  83   2          break;
+  84   2        case 1: //Thermal Heater (channel 1)
+  85   2          if (Value == 1) {
+  86   3            g_uc_TK_DUTY_CYCLE[1] = g_uc_BATT_HEATER_PWM_DUTY;
+  87   3            PCA0_setDutyCycle(PCA_HEATER, g_uc_TK_DUTY_CYCLE[1]); //set initial thermal knife pwm to be 80%
+  88   3            Thermal_heater_enable();
+  89   3            g_uc_TK_RUN[1] = 1; //set this flag to indicate thermal knife running
+  90   3          } else {
+  91   3            g_uc_TK_RUN[1] = 0; //set this flag to indicate thermal knife stopped
+  92   3            g_uc_TK_DUTY_CYCLE[1] = 0;
+  93   3            PCA0_setDutyCycle(PCA_HEATER, g_uc_TK_DUTY_CYCLE[1]); //set duty cycle to 0%
+  94   3            Thermal_heater_disable();
+  95   3          }
+  96   2      
+  97   2          break;
+  98   2        case 2: //Thermal Knife channel 2
+  99   2      
+ 100   2          break;
+ 101   2        default:
+ 102   2          break;
+ 103   2        }
+ 104   1      }
+ 105          
+ 106          void Thermal_setTkOutputScheduled(char Channel, char Value, unsigned short Delay_ms) {
+ 107   1        if ((Channel >= 0) && (Channel < TK_NumEl)) {
+ 108   2          g_uc_TK_VAR_VALUE_CH[Channel] = Value; //for storing TK ON/OFF value (from I2C)
+ 109   2      
+ 110   2          g_str_TK_TASK[Channel].delay = Delay_ms;
+ 111   2          g_str_TK_TASK[Channel].mode = timertask_executeOnce;
+ 112   2      //    g_us_TK_VAR_DELAY_CH[Channel] = Delay_ms; //for storing TK delay value (from I2C)
+ 113   2        }
+ 114   1      
+C51 COMPILER V9.02   PWRS_THERMAL                                                          12/28/2012 14:31:20 PAGE 3   
+
+ 115   1      }
+ 116          
+ 117          // FIXME new paradigm to handle TK cut and req cut and status : ian, charlie, etc.
+ 118          // -> how to not need to pretend that "TK is not cut" arg
+ 119          void Thermal_updateTkStatus() {
+ 120   1        SFR_pushPage(CONFIG_PAGE);
+ 121   1        if (TK_SW_1) //read from switch feedback, 0 or 1, update bit in self defined register
+ 122   1          g_uc_THERMAL_KNIFE |= TK1_CUT; // we enable 2nd bit if cut
+ 123   1        else
+ 124   1          g_uc_THERMAL_KNIFE &= ~TK1_CUT; // we disable 2nd bit
+ 125   1        SFR_popPage();
+ 126   1      
+ 127   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    449    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      6    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

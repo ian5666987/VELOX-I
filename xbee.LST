@@ -1,0 +1,1000 @@
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE XBEE
+OBJECT MODULE PLACED IN xbee.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE xbee.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          //-----------------------------------------------------------------------------
+   2          //      File:                   xbee.c
+   3          //      Author:                 GX Lee
+   4          //      Date Modifed:   17 Oct 12
+   5          // Contains XBee code
+   6          //-----------------------------------------------------------------------------
+   7          #define  interrupt(x)     interrupt x
+   8          
+   9          #include <c8051f120.h>
+  10          #include "PWRS_main.h"
+  11          #include <string.h>
+  12          #include <stdio.h>
+  13          
+  14          #include "C8051_UART1_string.h"
+  15          #include "PWRS_constant.h"
+  16          #include "PWRS_port.h"
+  17          #include "PWRS_extern_data.h"
+  18          #include "MCCIF_buffer.h"
+  19          #include "xbee.h"
+  20          #include "xbee_ATcmd.h"
+  21          #include "Velox_string.h"
+  22          #include "Velox_timertask.h"
+  23          #include "Velox_uart.h"
+  24          #include "xbee_data_segment.c"
+  25          
+  26          #ifdef XBEE_COORDINATOR
+  27          
+  28          struct struct_timertask XBee_packetDelay;
+  29          struct struct_timertask XBee_packetTimeout;
+  30          struct struct_timertask XBee_networkTimeout;
+  31          
+  32          //-----------------------------------------------------------------------------
+  33          //Function:         unsigned char XBeeTimerReset(void) 
+  34          // PreCondition:     none
+  35          // Input:                   none
+  36          // Output:                  none
+  37          // Overview:             This function will reset the delay timers for XBee packet delays
+  38          //-----------------------------------------------------------------------------
+  39          void XBeeTimerReset(void) {
+  40   1        XBee_packetDelay.mode = timertask_executeOnce;
+  41   1      }
+  42          
+  43          //-----------------------------------------------------------------------------
+  44          //Function:         void XBeeSetPacketDelay( unsigned short xbee_delay_sec, unsigned short xbee_delay_ms)
+  45          // PreCondition:    none
+  46          // Input:                       xbee_delay_sec : seconds of packet delay
+  47          //                                              xbee_delay_ms  : milliseconds of packet delay
+  48          // Output:                  none
+  49          // Overview:                This function will set the delay time between each transmitted packet
+  50          //-----------------------------------------------------------------------------
+  51          
+  52          void XBeeSetPacketDelay(unsigned short xbee_delay_sec, unsigned short xbee_delay_ms) {
+  53   1        XBee_packetDelay.delay = xbee_delay_sec * 1000 + xbee_delay_ms;
+  54   1      }
+  55          
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 2   
+
+  56          //-----------------------------------------------------------------------------
+  57          //Function:         void XBeeSetPacketTimeout( unsigned short xbee_timeout_sec, unsigned short xbee_timeou
+             -t_ms)
+  58          // PreCondition:    none
+  59          // Input:                       xbee_timeout_sec: seconds of packet timeout
+  60          //                                              xbee_timeout_ms: milliseconds of packet timeout
+  61          // Output:                          none
+  62          // Overview:                This function sets the value of packet timeout in seconds and milliseconds
+  63          //-----------------------------------------------------------------------------
+  64          
+  65          void XBeeSetPacketTimeout(unsigned short xbee_timeout_sec, unsigned short xbee_timeout_ms) {
+  66   1        XBee_packetTimeout.delay = xbee_timeout_sec * 1000 + xbee_timeout_ms;
+  67   1      }
+  68          
+  69          //-----------------------------------------------------------------------------
+  70          // Function:        void XBeePacketTimeoutReset(void)
+  71          // PreCondition:    none
+  72          // Input:                       none
+  73          // Output:                          none
+  74          // Overview:                This function resets the packet (failure) timer timeout
+  75          //-----------------------------------------------------------------------------
+  76          void XBeePacketTimeoutReset(void) {
+  77   1        XBee_packetTimeout.mode = timertask_executeOnce;
+  78   1      }
+  79          
+  80          //-----------------------------------------------------------------------------
+  81          // Function:        void XBeeSetNetworkTimeout( unsigned short xbee_timeout_sec, unsigned short xbee_timeo
+             -ut_ms)
+  82          // PreCondition:    none
+  83          // Input:                       none
+  84          // Output:                          none
+  85          // Overview:                This function sets the time for network timeout (timer is used for timeout for attempt t
+             -o enter AT mode
+  86          //                                              and timeout to poll for AI (Association Indicator) status
+  87          //-----------------------------------------------------------------------------
+  88          
+  89          void XBeeSetNetworkTimeout(unsigned short xbee_timeout_sec, unsigned short xbee_timeout_ms) {
+  90   1        XBee_networkTimeout.delay = xbee_timeout_sec * 1000 + xbee_timeout_ms;
+  91   1      }
+  92          
+  93          //-----------------------------------------------------------------------------
+  94          // Function:        void XBeeNetworkTimeoutReset(void)
+  95          // PreCondition:    none
+  96          // Input:                       none
+  97          // Output:                          none
+  98          // Overview:                This function resets the timer for network/ AT mode timeout
+  99          //-----------------------------------------------------------------------------
+ 100          void XBeeNetworkTimeoutReset(void) {
+ 101   1        XBee_networkTimeout.mode = timertask_executeOnce;
+ 102   1      }
+ 103          
+ 104          #endif
+ 105          
+ 106          //
+ 107          //#define RAID_XBEE_OFFSET   30
+ 108          //
+ 109          //void XBeeRestore() {
+ 110          //      Raid_readChars(RAID_XBEE_OFFSET+0,&end_dev_eui_hi,sizeof end_dev_eui_hi);
+ 111          //      Raid_readChars(RAID_XBEE_OFFSET+4,&end_dev_eui_lo,sizeof end_dev_eui_lo);
+ 112          //}
+ 113          
+ 114          #ifdef XBEE_COORDINATOR
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 3   
+
+ 115          //-----------------------------------------------------------------------------
+ 116          // Function:        void XBeeCoord_Handler(void)
+ 117          // PreCondition:    none
+ 118          // Input:                       none
+ 119          // Output:                    none
+ 120          // Overview:                This function execute the main functions of the XBee modules
+ 121          //-----------------------------------------------------------------------------
+ 122          void XBeeCoordHandler(void) {
+ 123   1        unsigned char l_uc_rx1_byte_count; //gxlee 13 Sep 12
+ 124   1        unsigned char l_uc_rx1_buffer[3]; // gxlee 6 Sep 12 : buffer length should add one more for the null cha
+             -racter
+ 125   1        unsigned char l_uc_tx1_buffer[4]; // gxlee 6 Sep 12 : buffer length should add one more for the null cha
+             -racter
+ 126   1      
+ 127   1        if (g_uc_assoc_indicator == 0) // If XBee Init is successful
+ 128   1            {
+ 129   2      
+ 130   2          // Periodically sample for RSSI
+ 131   2          // wait for one second
+ 132   2      
+ 133   2          /*---------- Receive code ------------------------*/
+ 134   2          // Receive code to put in front first so that it can reset the timeout flags if necessary
+ 135   2          // Poll for data
+ 136   2          l_uc_rx1_byte_count = XBeeATDataReceive(); // Handle any received data;
+ 137   2          if (XBeePacketReceived) // If valid packet received
+ 138   2          {
+ 139   3            switch (XBeeRxFrameType) {
+ 140   4            case 0x8B: // Ack frame type
+ 141   4              g_uc_packet_failure_count = 0; // reset packet failure count;
+ 142   4              g_uc_poll_XBee_timeout_flag = 0; // stop polling for packet transmission timeout
+ 143   4              // Re-initialise packet delay timing once the ack packet is received
+ 144   4              XBeeSetPacketDelay(XBEE_INI_SEC_PKT_DELAY, XBEE_INI_MS_PKT_DELAY);
+ 145   4              // Reset Packet delay timer
+ 146   4              XBeeTimerReset();
+ 147   4              g_uc_poll_XBee_timer_flag = 1;
+ 148   4      
+ 149   4      // If operating in Transparent (AT) MODE (always)
+ 150   4              ATCmdModeEnter(); // Enter AT command mode
+ 151   4      
+ 152   4              if (g_uc_XBee_AT_Mode_flag == 1) // AT command mode was entered into successfully
+ 153   4                  {
+ 154   5                l_uc_rx1_byte_count = ATCmdRead("DB", l_uc_rx1_buffer, 2); // obtain RSSI
+ 155   5                ATCmdModeExit();
+ 156   5      
+ 157   5                // receive signal strength indicator // TODO can be global variable for pwrs
+ 158   5                if (l_uc_rx1_byte_count > 0) {
+ 159   6                  Uart_putChars(XBEE_UART, "RSSI: -", 7);
+ 160   6                  //value = hexstring2ulong(l_uc_xbee_rssi, 2);
+ 161   6                  sprintf(l_uc_tx1_buffer, "%ld\r", hexstring2ulong(l_uc_rx1_buffer, 2)); // Print out in decima
+             -l
+ 162   6                  //  l_uc_rx1_byte_count = Uart1PrintHex2Dec(l_uc_xbee_rssi); // Print out in decimal
+ 163   6                  Uart_putChars(XBEE_UART, l_uc_tx1_buffer, strlen(l_uc_tx1_buffer));
+ 164   6                }
+ 165   5              }
+ 166   4      
+ 167   4              // IMPT!!!! Packet dealt with, reset the packet received flag
+ 168   4              XBeePacketReceived = 0;
+ 169   4              break;
+ 170   4            case 0x17: // Remote AT command request
+ 171   4              XBeeRemoteATCmdRqHandler();
+ 172   4              break;
+ 173   4            case 0x10: //Transmit Request Type
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 4   
+
+ 174   4              // Just send back acknowledgement with same sequence number
+ 175   4              if (XBeeRxSeqNum != XBeeRxPrevSeqNum) {
+ 176   5                XBeeATAck();
+ 177   5              }
+ 178   4              break;
+ 179   4      
+ 180   4            case 0x97: // Remote Command Response
+ 181   4              // IMPT!!!! Packet dealt with, reset the packet received flag
+ 182   4              XBeePacketReceived = 0;
+ 183   4              // Do nothing for now....
+ 184   4              // If required can check
+ 185   4              // XBeeATRqCmdResponse for the AT command queried
+ 186   4              // XBeeATRqParamSuccess: 1 if success, 0 if not
+ 187   4              // XBeeATRqParamResponse[XBeeRxPayloadPtr-3] for the queried parameter
+ 188   4              // IMPT!!!! Packet dealt with, reset the packet received flag
+ 189   4              break;
+ 190   4      
+ 191   4            default:
+ 192   4              // IMPT!!!! Packet dealt with, reset the packet received flag
+ 193   4              XBeePacketReceived = 0;
+ 194   4              break;
+ 195   4            }
+ 196   3      
+ 197   3          }
+ 198   2      
+ 199   2          // Poll for XBee timer, whether clear to send packet?
+ 200   2          // set packet delays using XBeeSetPacketDelay() function.
+ 201   2          // First packet will be sent straight away without waiting.
+ 202   2          if (g_uc_poll_XBee_timer_flag) {
+ 203   3            g_uc_send_packet_flag = Timertask_isReady(&XBee_packetDelay);
+ 204   3      //      g_uc_send_packet_flag = XBeePollPacketDelay();
+ 205   3          }
+ 206   2      
+ 207   2          // Poll if packet timeout occurs
+ 208   2          if (g_uc_poll_XBee_timeout_flag) {
+ 209   3            g_uc_packet_timeout = Timertask_isReady(&XBee_packetTimeout);
+ 210   3            if (g_uc_packet_timeout) {
+ 211   4              g_uc_packet_failure_count++;
+ 212   4              if (g_uc_packet_failure_count >= XBEE_PKT_FAILURE_LIMIT) {
+ 213   5                // Increment seconds of packet delay
+ 214   5                XBee_packetDelay.delay += 2000;
+ 215   5                // Limit the packet delay
+ 216   5                if (XBee_packetDelay.delay > XBEE_MAX_SEC_PKT_DELAY * 1000) {
+ 217   6                  XBee_packetDelay.delay = XBEE_MAX_SEC_PKT_DELAY * 1000;
+ 218   6                }
+ 219   5                g_uc_packet_failure_count = 0;
+ 220   5              }
+ 221   4              // Reset Packet delay timer
+ 222   4              XBeeTimerReset();
+ 223   4              // Poll for packet delay
+ 224   4              g_uc_poll_XBee_timer_flag = 1;
+ 225   4              // Stop polling for packet timeout
+ 226   4              g_uc_poll_XBee_timeout_flag = 0;
+ 227   4            }
+ 228   3          }
+ 229   2      
+ 230   2          // Transmit packet if flag set
+ 231   2          if (g_uc_send_packet_flag) {
+ 232   3      
+ 233   3      // If operating in Transparent (AT) MODE
+ 234   3            if (g_uc_XBee_AT_Mode_flag == 0) { //test if XBee is in AT mode
+ 235   4              // Only transmit if XBee is not in AT mode
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 5   
+
+ 236   4      
+ 237   4              XBeeWriteStringPayload(XbeeTestData);
+ 238   4              XBeeATDataTransmit();
+ 239   4      
+ 240   4              g_uc_send_packet_flag = 0;
+ 241   4              // start packet receive packet timeout
+ 242   4              XBeePacketTimeoutReset();
+ 243   4              g_uc_poll_XBee_timeout_flag = 1; // poll for timeout
+ 244   4              // Clear XBee delay packet also, since this could also be called by XBee delay timer expiring
+ 245   4              g_uc_poll_XBee_timer_flag = 0;
+ 246   4              // Code to test Remote AT command request, enable if required
+ 247   4              /*
+ 248   4               // Test Remote AT command Request
+ 249   4               XBeeRemoteATCmdRequest("NI",'\0');
+ 250   4      
+ 251   4               // Test Remote AT command write Request
+ 252   4               XBeeRemoteATCmdRequest("NI","HAPPY");
+ 253   4      
+ 254   4               // Test Remote AT command Request
+ 255   4               XBeeRemoteATCmdRequest("NI",'\0');
+ 256   4               */
+ 257   4            }
+ 258   3      
+ 259   3          }
+ 260   2        } else if (g_uc_assoc_indicator >= 0x20) {
+ 261   2          if (g_uc_try_AT_mode_flag) {
+ 262   3      
+ 263   3            ATCmdModeEnter(); // Enter AT command mode
+ 264   3            if (g_uc_XBee_AT_Mode_flag) {
+ 265   4              // Check for association indicator
+ 266   4              l_uc_rx1_byte_count = ATCmdRead("AI", l_uc_rx1_buffer, 2);
+ 267   4              g_uc_assoc_indicator = hexstring2ulong(l_uc_rx1_buffer, 2);
+ 268   4      
+ 269   4              // Exit from command mode (but not write to nonvolatile memory)   // ATWR to write to nonvolatile 
+             -memory
+ 270   4              ATCmdModeExit();
+ 271   4      
+ 272   4            } else {
+ 273   4              // Fails to enter AT command mode for some reason
+ 274   4              // g_uc_assoc_indicator = 0x01; // gxlee 12 Nov 12: TODO: XBee has started but unable to enter AT 
+             -mode for some reason, go to general function to deal with it
+ 275   4            }
+ 276   3            // TODO hardware reset in the future
+ 277   3            XBeeSetNetworkTimeout(2, 0); // set timeout of 2 seconds for coordinator to test for association sta
+             -tus
+ 278   3            XBeeNetworkTimeoutReset(); //reset the timer
+ 279   3            g_uc_try_AT_mode_flag = 0;
+ 280   3      
+ 281   3          } else {
+ 282   3            g_uc_try_AT_mode_flag = Timertask_isReady(&XBee_networkTimeout);
+ 283   3          }
+ 284   2      
+ 285   2        } else if (g_uc_assoc_indicator == 0x01 || g_uc_assoc_indicator == 0x03) { // deal with inability to ent
+             -er AT command mode from the start
+ 286   2          if (g_uc_try_AT_mode_flag) {
+ 287   3            g_uc_assoc_indicator = XBeeStart(); // try to enter AT mode again
+ 288   3            g_uc_try_AT_mode_flag = 0;
+ 289   3          } else {
+ 290   3            g_uc_try_AT_mode_flag = Timertask_isReady(&XBee_networkTimeout);
+ 291   3          }
+ 292   2        }
+ 293   1      }
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 6   
+
+ 294          #endif
+ 295          
+ 296          #ifdef XBEE_END_DEVICE
+              //-----------------------------------------------------------------------------
+              
+              //Function:         void XBeeEndDeviceHandler(void)
+              //
+              // PreCondition:     none
+              //
+              // Input:                   none
+              //
+              // Output:                 none
+              //
+              // Overview:             This function execute the main functions of the XBee modules
+              //-----------------------------------------------------------------------------
+              void XBeeEndDeviceHandler(void) {
+                unsigned char l_uc_rx1_byte_count; //gxlee 13 Sep 12
+                unsigned char l_uc_rx1_buffer[100];// gxlee 6 Sep 12 : buffer length should add one more for the null ch
+             -aracter
+              //      unsigned char l_uc_tx1_buffer[100]; // gxlee 6 Sep 12 : buffer length should add one more for the null 
+             -character
+                char test_AI = 0;
+              
+                if (XBEE_CTS_PIN == 0)// check
+                {
+                  if (g_uc_xbee_sleep_flag == 1)
+                  {
+                    g_uc_xbee_sleep_flag = 0;
+                    g_uc_xbee_scan_network_flag = 0;
+                    g_us_xbee_scan_network_ms_timer = 0;
+              
+                    // For checking of AI after first association, implement if wanted, but will make the module wake up
+             - for 7-8 seconds instead of 1+ second when not associated
+              //                      g_us_xbee_checkAI_timer = 0;    // reset check AI timer                 
+              //                      g_uc_xbee_checkAI_flag = 1;
+                  }
+              
+                  if (g_uc_assoc_indicator == 0) // If XBee Init is successful
+                  {
+                    g_us_xbee_watchdog_timer = 0; // reset Xbee watchdog timer;
+              
+                    //*****************************************************************************//
+                    // Code for loopback mode, Just transmit back what you receive                                      //
+                    // Difference between this loopback mode and the loopback mode                                              //
+                    // using application layer addressing endpoint 0 and cluster                                                //
+                    // ID 0x12 is the cluster ID does not loopback the carriage return character        //
+                    //******************************************************************************//
+              #ifdef XBEE_AT_MODE // If operating in Transparent (AT) MODE
+                    l_uc_rx1_byte_count = XBeeATDataReceive();// Handle any received data;
+              
+                    // l_uc_rx1_byte_count = UART1_pollChars(l_uc_rx1_buffer, 1); // check for received data
+              
+              // ************************************* Code to enable checking of AI when lost connectivity with coordin
+             -ator after first association  **********************************************************************/
+              // *************************************  Enable if required *********************************************
+             -****************************************
+                    /*
+                     if (l_uc_rx1_byte_count) // there is data during this check, no need to check AI in this wake up pe
+             -riod
+                     {
+                     */
+              // ************************************* End of Code to enable checking of AI when lost connectivity with 
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 7   
+
+             -coordinator after first association *******************
+                    if (XBeePacketReceived)// If valid packet received
+                    {
+              
+                      /* Loopback code
+                       // Flush transmit buffer
+                       FlushXBeeTx();
+                       // Copy receive buffer into transmit buffer
+                       memcpy(XBeeTxPayload, XBeeRxPayload, XBeeRxPayloadLength);
+                       XBeeTxData = XBeeRxPayloadLength;
+                       // Transmit
+                       XBeeATDataTransmit();
+                       */
+              
+                      switch (XBeeRxFrameType)
+                      {
+                        case 0x8B: // Ack frame type
+                        // Do nothing for End Device for now
+              
+                        // IMPT!!!! Packet dealt with, reset the packet received flag
+                        XBeePacketReceived = 0;
+              
+                        break;
+                        case 0x17:// Remote AT command request
+                        XBeeRemoteATCmdRqHandler();
+                        break;
+                        case 0x10://Transmit Request Type
+                        // Just send back acknowledgement with same sequence number
+                        if (XBeeRxSeqNum != XBeeRxPrevSeqNum)
+                        {
+                          XBeeATAck();
+                        }
+                        break;
+              
+                        case 0x97: // Remote Command Response
+              
+                        // IMPT!!!! Packet dealt with, reset the packet received flag
+                        XBeePacketReceived = 0;
+              
+                        // Do nothing for now....
+                        // If required can check
+                        // XBeeATRqCmdResponse for the AT command queried
+                        // XBeeATRqParamSuccess: 1 if success, 0 if not
+                        // XBeeATRqParamResponse[XBeeRxPayloadPtr-3] for the queried parameter
+                        break;
+                        default:
+                        // IMPT!!!! Packet dealt with, reset the packet received flag
+                        XBeePacketReceived = 0;
+                        break;
+                      }
+              
+                    }
+              
+              // ************************************* Code to enable checking of AI when lost connectivity with coordin
+             -ator after first association  **********************************************************************/
+              // *************************************  Enable if required *********************************************
+             -****************************************************************************************************/
+                    /*
+                     g_uc_xbee_checkAI_flag = 0;
+                     }
+                     else
+                     {
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 8   
+
+                     if (g_us_xbee_checkAI_timer > 600 && g_uc_xbee_checkAI_flag == 1 ) // there is data and module has 
+             -been awake for more than 600ms
+                     {
+                     // Check AI
+              
+                     ATCmdModeEnter();  // Enter AT command mode
+                     if (g_uc_XBee_AT_Mode_flag)
+                     {
+                     // Check for association indicator
+                     l_uc_rx1_byte_count = ATCmdRead("AI", l_uc_rx1_buffer, 2);
+                     g_uc_assoc_indicator = hexstring2ulong(l_uc_rx1_buffer,2);
+              
+                     // Exit from command mode (but not write to nonvolatile memory)    // ATWR to write to nonvolatile m
+             -emory
+                     ATCmdModeExit();
+                     if (g_uc_assoc_indicator == 0xFF){ // still scanning for network
+                     g_us_xbee_scan_network_ms_timer = 0; // reset scan timer and try again
+                     g_us_xbee_scan_network_time = 1200; // wait another 1.2 seconds and try again
+                     }
+                     else
+                     {
+                     g_uc_xbee_scan_network_flag = 1; //stop testing for AI this time
+                     g_us_xbee_scan_network_time = 0; // reset network time for next time
+                     g_uc_xbee_checkAI_flag = 0;
+                     }
+                     }
+              
+                     else
+                     {
+                     // Fails to enter AT command mode for some reason
+                     // g_uc_assoc_indicator = 0x01; // gxlee 12 Nov 12: TODO: XBee has started but unable to enter AT m
+             -ode for some reason, go to general function to deal with it
+                     }
+                     }
+                     }
+                     */
+              // ************************************* End of Code to enable checking of AI when lost connectivity with 
+             -coordinator after first association ********************************************/
+                    /*
+                     if (g_us_rx1_buffer_size > 0)
+                     {
+                     Uart1GetString(l_uc_rx1_buffer,g_us_rx1_buffer_size); // Get the data
+                     Uart1PutString(l_uc_rx1_buffer);// Transmit it back
+                     } */
+              
+              #endif
+                    //////////////////////////////////////////////////////////////
+              
+                  }
+                  else if (g_uc_assoc_indicator >= 0x20)
+                  {
+              
+                    if (g_us_xbee_scan_network_ms_timer > g_us_xbee_scan_network_time && g_uc_xbee_scan_network_flag == 
+             -0) // allow time for end device to scan for channels (time here depend on SD variable)
+                    {
+              #ifdef XBEE_AT_MODE
+              
+                      ATCmdModeEnter(); // Enter AT command mode
+                      if (g_uc_XBee_AT_Mode_flag)
+                      {
+                        // Check for association indicator
+                        l_uc_rx1_byte_count = ATCmdRead("AI", l_uc_rx1_buffer, 2);
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 9   
+
+                        g_uc_assoc_indicator = hexstring2ulong(l_uc_rx1_buffer,2);
+              
+                        // Exit from command mode (but not write to nonvolatile memory)         // ATWR to write to nonvolatil
+             -e memory
+                        ATCmdModeExit();
+              
+                        if (g_uc_assoc_indicator == 0xFF) { // still scanning for network
+                          g_us_xbee_scan_network_ms_timer = 0;// reset scan timer and try again
+                          g_us_xbee_scan_network_time = 1200;// wait another 1.2 seconds and try again
+                        }
+                        else
+                        {
+                          if (g_uc_assoc_indicator ==0x25) //unexpected state
+                          {
+                            XBeeHardwareReset();
+                          }
+              
+                          g_uc_xbee_scan_network_flag = 1; //stop testing for AI this time
+                          g_us_xbee_scan_network_time = 0;// reset network time for next time
+                        }
+              
+                        g_us_xbee_watchdog_timer = 0; //reset xbee watchdog timer
+                      }
+                      else
+                      {
+                        // Fails to enter AT command mode for some reason
+                        // g_uc_assoc_indicator = 0x01; // gxlee 12 Nov 12: TODO: XBee has started but unable to enter A
+             -T mode for some reason, go to general function to deal with it
+                        if (g_us_xbee_watchdog_timer > 30000)
+                        {
+                          XBeeHardwareReset(); // hardware reset the module if unable to enter AT command mode for more 
+             -than 30seconds
+                          g_us_xbee_watchdog_timer = 0;// reset xbee watchdog timer
+                          g_uc_assoc_indicator = XBeeStart();// try to enter AT mode again
+                        }
+                      }
+              #elif
+                      g_uc_assoc_indicator = 0x02; // return 0x02 if no valid mode selected
+              #endif
+                    }
+              
+                  }
+                  else if (g_uc_assoc_indicator == 0x01 || g_uc_assoc_indicator == 0x03) // deal with inability to enter
+             - AT command mode from the start
+                  {
+              
+                    if (g_uc_xbee_scan_network_flag == 0)
+                    {
+                      g_uc_assoc_indicator = XBeeStart(); // try to enter AT mode again
+                      g_uc_xbee_scan_network_flag = 1;//stop testing
+                    }
+              
+                    if (g_us_xbee_watchdog_timer > 30000)
+                    {
+                      XBeeHardwareReset(); // hardware reset the module if unable to enter AT command mode for more than
+             - 30seconds
+                      g_us_xbee_watchdog_timer = 0;// reset xbee watchdog timer
+                    }
+                  }
+                  //else
+                  //{
+                  // do nothing for the rest of the other conditions for now
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 10  
+
+                  //}
+              
+                }
+                else
+                {
+                  if (g_uc_xbee_sleep_flag == 0) // if previous state was sleeping, flag as sleeping now
+                  {
+                    g_uc_xbee_sleep_flag = 1;
+                  }
+              
+                  if (g_us_xbee_watchdog_timer > 30000)
+                  {
+                    XBeeHardwareReset(); // hardware reset the module if unable to enter AT command mode for more than 3
+             -0seconds
+                    g_us_xbee_watchdog_timer = 0;// reset xbee watchdog timer
+                  }
+                }
+              }
+              
+              //-----------------------------------------------------------------------------
+              
+              //Function:         void XBeeHardwareReset (void)
+              //
+              // PreCondition:     none
+              //
+              // Input:                   none
+              //
+              // Output:                  none
+              //
+              // Overview:             This function will generate a pulse of 1ms to reset the XBee Module
+              //-----------------------------------------------------------------------------
+              void XBeeHardwareReset(void) {
+                unsigned char i;
+              
+                XBEE_RESET_PIN = 0; // pull low
+              
+                for (i=1; i< 6; i++);//must at least be 200ns
+              
+                XBEE_RESET_PIN = 1;// float high
+              
+              }
+              
+              #endif
+ 565          
+ 566          //-----------------------------------------------------------------------------
+ 567          // Function:        unsigned char XBeeInit (void)
+ 568          // PreCondition:    none
+ 569          // Input:                       none
+ 570          // Output:                    Association Indicator given by the AI command
+ 571          // Overview:                This function will initialise the variables to be use by Xbee Module upon startup
+ 572          //-----------------------------------------------------------------------------
+ 573          void XBeeInit(void) {
+ 574   1        // initialise variables        // gxlee: 6 Nov 11
+ 575   1        g_uc_assoc_indicator = 0;
+ 576   1        g_uc_try_AT_mode_flag = 0;
+ 577   1        g_uc_poll_XBee_timer_flag = 0;
+ 578   1        g_uc_send_packet_flag = 1; // Initialise to 1 to allow the first packet to be sent without the delay!
+ 579   1      
+ 580   1        XBee_packetDelay.mode = timertask_disabled;
+ 581   1        XBee_packetTimeout.mode = timertask_disabled;
+ 582   1        XBee_networkTimeout.mode = timertask_disabled;
+ 583   1      
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 11  
+
+ 584   1      #ifdef XBEE_COORDINATOR
+ 585   1        XBeeSetPacketDelay(XBEE_INI_SEC_PKT_DELAY, XBEE_INI_MS_PKT_DELAY); // initialise packet delay to 5 secon
+             -ds
+ 586   1        XBeeSetPacketTimeout(XBEE_PKT_SEC_TIMEOUT, XBEE_PKT_MS_TIMEOUT); // set packet time out of 5 seconds, re
+             -fer to Pg 67 of unicast timeout
+ 587   1      #endif
+ 588   1      
+ 589   1        g_uc_poll_XBee_timeout_flag = 0;
+ 590   1        g_us_AT_mode_guard_time = 1000; // set as 1000ms, if AT Mode entered successfully to 50 ms to reduce pro
+             -cessing time
+ 591   1        g_uc_packet_failure_count = 0;
+ 592   1      
+ 593   1        g_uc_XBee_AT_Mode_flag = 0; // XBee initialising, assume is not in AT mode
+ 594   1      
+ 595   1        // NOTE: 16-bit PAN ID is read only in XBee ZB
+ 596   1        // Set extended PAN ID to 0 for coordinator to select random extended PAN ID
+ 597   1        // If set to zero, will then need to then check for 64-bit address of coord)
+ 598   1        g_ul_extended_pan_id_hi = 0xA7B480B6;
+ 599   1        g_ul_extended_pan_id_lo = 0xBE16129A;
+ 600   1        // Allow scanning of 12 Operating Channels (to limit crosstalk in EM250)
+ 601   1        // Set channel to range from 12-23 //TODO need to check if they rejoin after they are out of range!!!
+ 602   1        g_us_scan_channel_mask = 0x1FFE; // (Scan Channel Mask        using default 0x1FFE)
+ 603   1      
+ 604   1        g_uc_scan_duration = 3;
+ 605   1      
+ 606   1        g_uc_xbee_power_level = XBEE_POWER_LEVEL;
+ 607   1      
+ 608   1        g_us_xbee_no_sleep_periods = 1; // No. of sleep period not to asset the On/ Sleep Pin on wakeup
+ 609   1        g_us_xbee_sleep_period = 0x20; // Sleep Period: How long the end device will sleep at a time (in 10ms)
+ 610   1      
+ 611   1      #ifdef XBEE_END_DEVICE
+                g_uc_xbee_sleep_mode = 5; // Set Sleep Mode to Cyclic Sleep with Pin Wake
+                g_uc_xbee_sleep_options = 0;// Sleep Options
+              
+                g_us_xbee_time_b4_sleep = 0x1388;// Time Before Sleep: Set the time before sleep timer on an end device
+              
+                g_us_xbee_scan_network_ms_timer = 0;
+                g_uc_xbee_sleep_flag = 0;
+              
+                XBEE_DTR_PIN = 0;//assert the DTR pin at the start
+              
+                g_us_xbee_watchdog_timer = 0;// For XBee watchdog timer; if possible implement for XBee Coordinator also
+              #endif
+ 624   1      
+ 625   1        XBeePacketReceived = 0;
+ 626   1      
+ 627   1        ATCmd_Init();
+ 628   1      
+ 629   1        g_uc_encryption_enable = 0; // Going to disable encryption by default: though it can be easily enabled i
+             -n the future
+ 630   1        g_uc_encryption_options = 0x02;
+ 631   1        g_ul_XBee_link_key_3 = 0xCCDF2E49;
+ 632   1        g_ul_XBee_link_key_2 = 0x8143E245;
+ 633   1        g_ul_XBee_link_key_1 = 0x2A9C0272;
+ 634   1        g_ul_XBee_link_key_0 = 0xFB6BF88C;
+ 635   1      }
+ 636          
+ 637          //-----------------------------------------------------------------------------
+ 638          // Function:        unsigned char XBeeStart (void)
+ 639          // PreCondition:    none
+ 640          // Input:                       none
+ 641          // Output:                    Association Indicator given by the AI command
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 12  
+
+ 642          // Overview:                This function will initialise and check the parameters of the Xbee Module upon startup
+ 643          //-----------------------------------------------------------------------------
+ 644          unsigned char XBeeStart(void) {
+ 645   1        unsigned char count;
+ 646   1        unsigned char write_buffer[21]; // to store write buffer to XBee
+ 647   1        unsigned char read_buffer[21]; // to store read buffer
+ 648   1        unsigned char assoc_indicator; // store the association indicator given by the AI command
+ 649   1      
+ 650   1      #ifdef XBEE_END_DEVICE
+                if (XBEE_CTS_PIN == 1) // Check if module is sleeping
+                {
+                  XBEE_DTR_PIN |= 1; //re-assert first for some time
+                  for (count =0; count < 250; count++);
+                }
+                XBEE_DTR_PIN = 0; // de-assert the DTR pin to try to wake the module
+                // must remember to re-assert back!
+              
+                g_us_ms_ATCommand_timer = 0;
+                while (XBEE_CTS_PIN == 1 && g_us_ms_ATCommand_timer < 3000);// Check CTS for at most 3 seconds
+                if (XBEE_CTS_PIN == 1)
+                {
+                  XBEE_DTR_PIN = 1; // re-assert the DTR pin back
+                  return 0x03;// return 0x03 if CTS not cleared for end device and do not attempt to enter AT mode now
+                }
+              #endif
+ 667   1      
+ 668   1        ATCmdModeEnter(); // Enter AT command mode
+ 669   1      
+ 670   1        if (g_uc_XBee_AT_Mode_flag == 1) { // AT command mode was entered into successfully
+ 671   2          // Read and check SC value
+ 672   2          count = ATCmdRead("SC", read_buffer, 4);
+ 673   2          if (hexstring2ulong(read_buffer, count) != g_us_scan_channel_mask && count > 0) {
+ 674   3            // Set Scan Channel Mask if changed from default
+ 675   3            memset(write_buffer, 0, sizeof write_buffer);
+ 676   3            sprintf(write_buffer, "%X", g_us_scan_channel_mask);
+ 677   3            ATCmdWrite("SC", write_buffer);
+ 678   3          }
+ 679   2      
+ 680   2          // Read and check SD value
+ 681   2          count = ATCmdRead("SD", read_buffer, 1);
+ 682   2          if (hexstring2ulong(read_buffer, count) != g_uc_scan_duration && count > 0) {
+ 683   3            // Set Scan Channel Mask if changed from default
+ 684   3            memset(write_buffer, 0, sizeof write_buffer);
+ 685   3            sprintf(write_buffer, "%bX", g_uc_scan_duration);
+ 686   3            ATCmdWrite("SD", write_buffer);
+ 687   3          }
+ 688   2      
+ 689   2          // Read and check PAN ID
+ 690   2          // Set Pre-configured network ID but variable SC so that coordinator can choose a different channel if
+             - it just so happens that a same PAN ID exists
+ 691   2          // when setting up the network
+ 692   2          count = ATCmdRead("ID", read_buffer, 16);
+ 693   2          if (count > 8) {
+ 694   3            if ((hexstring2ulong(read_buffer, count - 8) != g_ul_extended_pan_id_hi) || (hexstring2ulong(read_bu
+             -ffer + 8, 8) != g_ul_extended_pan_id_lo)) {
+ 695   4              // Set extended PAN ID if changed from default
+ 696   4              memset(write_buffer, 0, sizeof write_buffer);
+ 697   4              sprintf(write_buffer, "%lX", g_ul_extended_pan_id_hi);
+ 698   4              sprintf(write_buffer + 8, "%lX", g_ul_extended_pan_id_lo);
+ 699   4              ATCmdWrite("ID", write_buffer);
+ 700   4            }
+ 701   3          } else {
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 13  
+
+ 702   3            if ((g_ul_extended_pan_id_hi != 0 || hexstring2ulong(read_buffer, count) != g_ul_extended_pan_id_lo)
+             - && count > 0) {
+ 703   4              // Set extended PAN ID if changed from default
+ 704   4              memset(write_buffer, 0, sizeof write_buffer);
+ 705   4              sprintf(write_buffer, "%lX", g_ul_extended_pan_id_hi);
+ 706   4              sprintf(write_buffer + 8, "%lX", g_ul_extended_pan_id_lo);
+ 707   4              ATCmdWrite("ID", write_buffer);
+ 708   4            }
+ 709   3          }
+ 710   2          // Read and set ZigBee Stack Profile (Not Used here, but just check if it is zero)
+ 711   2          count = ATCmdRead("ZS", read_buffer, 1);
+ 712   2          if (hexstring2ulong(read_buffer, count) != 0 && count > 0) {
+ 713   3            // Set PAN ID if changed from default
+ 714   3            memset(write_buffer, 0, sizeof write_buffer);
+ 715   3            sprintf(write_buffer, "%bX", (unsigned char) 0);
+ 716   3            ATCmdWrite("ZS", write_buffer);
+ 717   3          }
+ 718   2      
+ 719   2      #ifdef XBEE_COORDINATOR
+ 720   2          // Read Node Identifier
+ 721   2          count = ATCmdRead("NI", read_buffer, 20);
+ 722   2          if (strcmp(read_buffer, COORD_NI) != 0 && count > 0) {
+ 723   3            // Set Node identifier if changed from default
+ 724   3            ATCmdWrite("NI", COORD_NI);
+ 725   3          }
+ 726   2          // Read Destination Address High (Set to broadcast so that you don't have to bother about the 64-bit a
+             -ddress of the end device)
+ 727   2          count = ATCmdRead("DH", read_buffer, 8);
+ 728   2          if (hexstring2ulong(read_buffer, count) != 0 && count > 0) {
+ 729   3            // Set DH parameter if changed from default
+ 730   3            memset(write_buffer, 0, sizeof write_buffer);
+ 731   3            sprintf(write_buffer, "%lX", (unsigned long) 0);
+ 732   3            ATCmdWrite("DH", write_buffer);
+ 733   3          }
+ 734   2          // Read Destination Address Low (Set to broadcast so that you don't have to bother about the 64-bit ad
+             -dress of the end device)
+ 735   2          count = ATCmdRead("DL", read_buffer, 8);
+ 736   2          if (hexstring2ulong(read_buffer, count) != 0xFFFF && count > 0) {
+ 737   3            // Set DL parameter if changed from default
+ 738   3            memset(write_buffer, 0, sizeof write_buffer);
+ 739   3            sprintf(write_buffer, "%lX", (unsigned long) 0xFFFF);
+ 740   3            ATCmdWrite("DL", write_buffer);
+ 741   3          }
+ 742   2      #endif
+ 743   2      
+ 744   2          // Read Number of Sleep Periods
+ 745   2          count = ATCmdRead("SN", read_buffer, 4);
+ 746   2          if (hexstring2ulong(read_buffer, count) != g_us_xbee_no_sleep_periods && count > 0) {
+ 747   3            // Set SN parameter if changed from default
+ 748   3            memset(write_buffer, 0, sizeof write_buffer);
+ 749   3            sprintf(write_buffer, "%X", g_us_xbee_no_sleep_periods);
+ 750   3            ATCmdWrite("SN", write_buffer);
+ 751   3          }
+ 752   2          // Read Sleep Period
+ 753   2          count = ATCmdRead("SP", read_buffer, 4);
+ 754   2          if (hexstring2ulong(read_buffer, count) != g_us_xbee_sleep_period && count > 0) {
+ 755   3            // Set SP parameter if changed from default
+ 756   3            memset(write_buffer, 0, sizeof write_buffer);
+ 757   3            sprintf(write_buffer, "%X", g_us_xbee_sleep_period);
+ 758   3            ATCmdWrite("SP", write_buffer);
+ 759   3          }
+ 760   2      
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 14  
+
+ 761   2      #ifdef XBEE_END_DEVICE
+                  // Read Node Identifier
+                  count = ATCmdRead("NI", read_buffer, 20);
+                  if (strcmp(read_buffer,END_DEVICE_NI) != 0 && count > 0)
+                  {
+                    // Set Node identifier if changed from default
+                    ATCmdWrite("NI", END_DEVICE_NI);
+                  }
+                  // Read Destination Address High (Set to general coordinator address (0x00) so that you don't have to 
+             -bother about the actual 64-bit address)
+                  count = ATCmdRead("DH", read_buffer, 8);
+                  if (hexstring2ulong(read_buffer, count) != 0 && count > 0) {
+                    // Set DH parameter if changed from default
+                    memset(write_buffer,0,sizeof write_buffer);
+                    sprintf(write_buffer, "%lX", (unsigned long) 0);
+                    ATCmdWrite("DH", write_buffer);
+                  }
+                  // Read Destination Address Low  (Set to general coordinator address (0x00) so that you don't have to 
+             -bother about the actual 64-bit address)
+                  count = ATCmdRead("DL", read_buffer, 8);
+                  if (hexstring2ulong(read_buffer, count) != 0 && count > 0) {
+                    // Set DL parameter if changed from default
+                    memset(write_buffer,0,sizeof write_buffer);
+                    sprintf(write_buffer, "%lX", (unsigned long) 0);
+                    ATCmdWrite("DL", write_buffer);
+                  }
+                  ///////////////// Set Sleep Commands /////////////////////////////////
+                  // Read Sleep Mode
+                  count = ATCmdRead("SM", read_buffer, 1);
+                  if (hexstring2ulong(read_buffer, count) != g_uc_xbee_sleep_mode && count > 0) {
+                    // Set SM parameter if changed from default
+                    memset(write_buffer,0,sizeof write_buffer);
+                    sprintf(write_buffer, "%bX", g_uc_xbee_sleep_mode);
+                    ATCmdWrite("SM", write_buffer);
+                  }
+                  // Read Sleep Options
+                  count = ATCmdRead("SO", read_buffer, 2);
+                  if (hexstring2ulong(read_buffer, count) != g_uc_xbee_sleep_options && count > 0) {
+                    // Set SO parameter if changed from default
+                    memset(write_buffer,0,sizeof write_buffer);
+                    sprintf(write_buffer, "%bX", g_uc_xbee_sleep_options);
+                    ATCmdWrite("SO", write_buffer);
+                  }
+              
+                  // Read Time before Sleep
+                  count = ATCmdRead("ST", read_buffer, 4);
+                  if (hexstring2ulong(read_buffer, count) != g_us_xbee_time_b4_sleep && count > 0) {
+                    // Set ST parameter if changed from default
+                    memset(write_buffer,0,sizeof write_buffer);
+                    sprintf(write_buffer, "%X", g_us_xbee_time_b4_sleep);
+                    ATCmdWrite("ST", write_buffer);
+                  }
+              #endif //of #ifdef XBEE_END_DEVICE
+ 812   2          // Reduce Guard Time
+ 813   2          g_us_AT_mode_guard_time = 20; // reduce guard time if in AT mode
+ 814   2          count = ATCmdRead("GT", read_buffer, 3);
+ 815   2          if (hexstring2ulong(read_buffer, count) != g_us_AT_mode_guard_time && count > 0) {
+ 816   3            // Set GT parameter if changed from default
+ 817   3            memset(write_buffer, 0, sizeof write_buffer);
+ 818   3            sprintf(write_buffer, "%X", g_us_AT_mode_guard_time);
+ 819   3            ATCmdWrite("GT", write_buffer);
+ 820   3          }
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 15  
+
+ 821   2      
+ 822   2          // Set security configuration settings (EE, EO, NK, KY)
+ 823   2          // Configurations are set for a network with security (pre-configured link keys)
+ 824   2          count = ATCmdRead("EE", read_buffer, 2);
+ 825   2          if (hexstring2ulong(read_buffer, count) != g_uc_encryption_enable && count > 0) {
+ 826   3            memset(write_buffer, 0, sizeof write_buffer);
+ 827   3            sprintf(write_buffer, "%bX", g_uc_encryption_enable);
+ 828   3            ATCmdWrite("EE", write_buffer); // Encryption Enable: 1: Encryption enabled, 0: encryption disabled
+ 829   3          }
+ 830   2      
+ 831   2          if (g_uc_encryption_enable) {
+ 832   3            count = ATCmdRead("EO", read_buffer, 2);
+ 833   3            if (hexstring2ulong(read_buffer, count) != g_uc_encryption_options && count > 0) {
+ 834   4              memset(write_buffer, 0, sizeof write_buffer);
+ 835   4              sprintf(write_buffer, "%bX", g_uc_encryption_options);
+ 836   4              ATCmdWrite("EO", write_buffer); // Encryption Options: Use trust centre
+ 837   4            }
+ 838   3            // Leave NK as it is for XBee ZB
+ 839   3            // NK is write only, only valid for coordinator so we let it have any value
+ 840   3      
+ 841   3            // Set Link Key (write only) (to encrypt application data)
+ 842   3            sprintf(write_buffer, "%lX", g_ul_XBee_link_key_3);
+ 843   3            sprintf(write_buffer + 8, "%lX", g_ul_XBee_link_key_2);
+ 844   3            sprintf(write_buffer + 16, "%lX", g_ul_XBee_link_key_1);
+ 845   3            sprintf(write_buffer + 24, "%lX", g_ul_XBee_link_key_0);
+ 846   3            ATCmdWrite("KY", write_buffer); // Encryption Key: 128-bit AES
+ 847   3          }
+ 848   2      
+ 849   2          // Set PL (power level on ZigBee module )
+ 850   2          count = ATCmdRead("PL", read_buffer, 1);
+ 851   2          if (hexstring2ulong(read_buffer, count) != g_uc_xbee_power_level && count > 0) {
+ 852   3            memset(write_buffer, 0, sizeof write_buffer);
+ 853   3            sprintf(write_buffer, "%bX", g_uc_xbee_power_level);
+ 854   3            ATCmdWrite("PL", write_buffer); // Encryption Options: Use trust centre
+ 855   3          }
+ 856   2      
+ 857   2          // Will write only if there are any changes
+ 858   2          // Save changes to nonvolatile memory (Changes to PAN ID should be written to non volatile memory)
+ 859   2          ATCmdWrite("WR", "");
+ 860   2      
+ 861   2          // Apply changes by issuing AC commands
+ 862   2          ATCmdWrite("AC", "");
+ 863   2      
+ 864   2          // Check Association Indicator on network status
+ 865   2          count = ATCmdRead("AI", read_buffer, 2); // get an initial reading first
+ 866   2          assoc_indicator = hexstring2ulong(read_buffer, 2);
+ 867   2      
+ 868   2      #ifdef XBEE_COORDINATOR
+ 869   2          XBeeSetNetworkTimeout(2, 0); // check AI about every 2 seconds to allow time for setting/ joining netw
+             -ork
+ 870   2          XBeeNetworkTimeoutReset();
+ 871   2      #endif
+ 872   2      
+ 873   2          // Exit from command mode (but not write to nonvolatile memory)       // ATWR to write to nonvolatile memo
+             -ry
+ 874   2          ATCmdModeExit();
+ 875   2      
+ 876   2      #ifdef XBEE_END_DEVICE
+                  g_uc_xbee_sleep_flag = 0;
+                  if (assoc_indicator == 0xFF) {
+                    g_us_xbee_scan_network_ms_timer = 0; // reset timer
+                    g_us_xbee_scan_network_time = 1475;// wait 1475 ms for scanning network
+C51 COMPILER V9.02   XBEE                                                                  12/28/2012 13:46:35 PAGE 16  
+
+                    g_uc_xbee_scan_network_flag = 0;// don't scan network otherwise
+                  } else {
+                    g_uc_xbee_scan_network_flag = 1; // don't scan network otherwise
+                    g_us_xbee_scan_network_time = 0;// wait 1475 ms for scanning network
+                  }
+                  XBEE_DTR_PIN = 1; // re-assert the DTR pin back
+                  EX0 = EX0 | 1;// Enable INT0_N interrupt
+              #endif
+ 889   2      
+ 890   2          return assoc_indicator;
+ 891   2        } else {
+ 892   2      #ifdef XBEE_COORDINATOR
+ 893   2          XBeeSetNetworkTimeout(1, 0); // set timeout of 1 seconds to try to enter AT Mode
+ 894   2          XBeeNetworkTimeoutReset();
+ 895   2      #endif
+ 896   2      
+ 897   2      #ifdef XBEE_END_DEVICE
+                  XBEE_DTR_PIN = 1; // re-assert the DTR pin back
+                  EX0 = EX0 | 1;// Enable INT0_N interrupt
+              #endif
+ 901   2          return 0x01; // return 0x01 if fails to enter AT command mode
+ 902   2        }
+ 903   1        return 0x02; // returns 0x02 if no valid mode selected
+ 904   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   4062    ----
+   CONSTANT SIZE    =     85    ----
+   XDATA SIZE       =    112    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

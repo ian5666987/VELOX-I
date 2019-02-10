@@ -1,0 +1,92 @@
+C51 COMPILER V9.02   VELOX_SLOWTASK                                                        05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_SLOWTASK
+OBJECT MODULE PLACED IN Velox_slowtask.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_slowtask.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "Velox_slowtask.h"
+   4          #include "Velox_uptime.h"
+   5          
+   6          // Slowtask_setDisabled is implemented so that it suits the situation as often as possible
+   7          void Slowtask_setDisabled(Slowtask* task) {
+   8   1        task->mode = slowtask_disabled;
+   9   1      }
+  10          
+  11          void Slowtask_setExecuteOnce(Slowtask* task, unsigned char delay) {
+  12   1        task->from_clock = uptime.session;
+  13   1        task->delay = delay;
+  14   1        task->mode = slowtask_executeOnce;
+  15   1      }
+  16          
+  17          void Slowtask_setPeriodic(Slowtask* task, unsigned char delay) {
+  18   1        task->from_clock = uptime.session;
+  19   1        task->delay = delay;
+  20   1        task->mode = slowtask_periodic;
+  21   1      }
+  22          
+  23          void Slowtask_setRepeated(Slowtask* task, unsigned char delay) {
+  24   1        task->from_clock = uptime.session;
+  25   1        task->delay = delay;
+  26   1        task->mode = slowtask_repeated;
+  27   1      }
+  28          
+  29          // Slowtask_fromNow is typically used to postpone the next task execution,
+  30          // since subsequently the full delay is required to elapse
+  31          // Examples: watch-dog mechanisms, prevent state buildups, ...
+  32          void Slowtask_fromNow(Slowtask* task) {
+  33   1        task->from_clock = uptime.session;
+  34   1      }
+  35          
+  36          // returns number of seconds since last execution
+  37          unsigned char Slowtask_sinceLast(Slowtask* task) {
+  38   1        unsigned char slowtask_clock = uptime.session;
+  39   1        return slowtask_clock - task->from_clock;
+  40   1      }
+  41          
+  42          char Slowtask_isReady(Slowtask* task) {
+  43   1        unsigned char delta;
+  44   1        unsigned char slowtask_clock = uptime.session;
+  45   1        if (task->mode == slowtask_disabled) {
+  46   2          task->from_clock = slowtask_clock;
+  47   2        } else {
+  48   2          delta = slowtask_clock - task->from_clock;
+  49   2          if (task->delay <= delta) {
+  50   3            switch (task->mode) {
+  51   4            case slowtask_executeOnce:
+  52   4              task->from_clock = slowtask_clock;
+  53   4              task->mode = slowtask_disabled;
+  54   4              break;
+  55   4            case slowtask_periodic:
+C51 COMPILER V9.02   VELOX_SLOWTASK                                                        05/20/2014 11:03:53 PAGE 2   
+
+  56   4              task->from_clock += task->delay; // equation to compensate lag
+  57   4              break;
+  58   4            case slowtask_repeated:
+  59   4              task->from_clock = slowtask_clock; // ignore any lag; pretend you are on time, and next execution 
+             -is in 'delay' ms
+  60   4              break;
+  61   4            }
+  62   3            return 1;
+  63   3          }
+  64   2        }
+  65   1        return 0;
+  66   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    696    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     27    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

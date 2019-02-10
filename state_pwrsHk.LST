@@ -1,0 +1,126 @@
+C51 COMPILER V9.02   STATE_PWRSHK                                                          05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_PWRSHK
+OBJECT MODULE PLACED IN state_pwrsHk.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_pwrsHk.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "Velox_beacon.h"
+   6          #include "Velox_macros.h"
+   7          #include "Velox_uptime.h"
+   8          
+   9          #include "mccif_xdata.h"
+  10          
+  11          #include "shared_general.h"
+  12          #include "shared_obdh.h"
+  13          #include "shared_pwrs.h"
+  14          
+  15          #include "obdh_constant.h"
+  16          #include "obdh_cqt.h"
+  17          #include "obdh_globalvariables.h"
+  18          #include "obdh_recon.h"
+  19          #include "obdh_trxuv.h"
+  20          
+  21          #include "state_util.h"
+  22          
+  23          enum enum_pwrsHk {
+  24            pwrsHk_channelStatus = 0, // 0
+  25            pwrsHk_beacon, //
+  26            pwrsHk_cqtCurrent, //
+  27            pwrsHk_cqtCurrent_ack, //
+  28            pwrsHk_commOff_ack, //
+  29            pwrsHk_taiTime_ack, //
+  30          };
+  31          
+  32          char State_pwrsHk(char* subtask) {
+  33   1        char release = 0; // default return choice: do not release state, unless specific set (see release = 1; 
+             -instruction below)
+  34   1        short length;
+  35   1        long pwrs_time;
+  36   1        switch (*subtask) {
+  37   2        case pwrsHk_channelStatus: // request channel status
+  38   2          Beacon_setUnassigned(&g_c_beacon[XDATA_PWRS_BEACON_START_POS], XDATA_PWRS_BEACON_LENGTH); // the pwrs 
+             -beacon location is right after the header therefore XDATA_PWRS_BEACON_START_POS
+  39   2          if (Subsystem_isAvailable(PWRS_ADDRESS)) {
+  40   3            // ---
+  41   3            StateUtil_pokeRequestXdata(PWRS_ADDRESS, XDATA_PWRS_CHANNEL_STATUS_OFFSET, 2);
+  42   3            ++*subtask;
+  43   3          } else
+  44   2            release = 1; // signal to release
+  45   2          break;
+  46   2        case pwrsHk_beacon: // wait for channel status; request beacon
+  47   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  48   3            g_us_obdh_channel_status = extractFromBuffer(unsigned short, &i2c_rxbuffer[MCCIF_DATA_OFFSET]); // u
+             -pdate channel status
+  49   3            Recon_ChannelStatusUpdated_Event();
+  50   3            // ---
+  51   3            StateUtil_pokeRequestXdata(PWRS_ADDRESS, XDATA_PWRS_BEACON_OFFSET, XDATA_PWRS_BEACON_LENGTH); // req
+             -uest beacon
+C51 COMPILER V9.02   STATE_PWRSHK                                                          05/20/2014 11:03:52 PAGE 2   
+
+  52   3            ++*subtask;
+  53   3          }
+  54   2          break;
+  55   2        case pwrsHk_cqtCurrent: // wait for beacon
+  56   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  57   3            StateUtil_copyReply(&g_c_beacon[XDATA_PWRS_BEACON_START_POS], XDATA_PWRS_BEACON_LENGTH);
+  58   3            // ---
+  59   3            StateUtil_pokeRequestXdata(PWRS_ADDRESS, XDATA_PWRS_CQT_CURRENT, 2); // request for cqt current
+  60   3            ++*subtask;
+  61   3          }
+  62   2          break;
+  63   2        case pwrsHk_cqtCurrent_ack:
+  64   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  65   3            StateUtil_copyReply(&g_cqtInfo.current, 2);
+  66   3            if (Uptime_isTaiTimeValid()) {
+  67   4              if (Runtime_hasExpired(&g_trxuv.runtime)) {
+  68   5                length = CHANNEL_MASK_COMM;
+  69   5                StateUtil_pokeSetXdata(PWRS_ADDRESS, XDATA_PWRS_CH_EXTREQOFF_OFFSET, 2, &length);
+  70   5                *subtask = pwrsHk_commOff_ack;
+  71   5              } else
+  72   4                release = 1;
+  73   4            } else {
+  74   4              StateUtil_pokeRequestXdata(PWRS_ADDRESS, XDATA_PWRS_TAITIME_OFFSET, sizeof uptime.tai_time);
+  75   4              *subtask = pwrsHk_taiTime_ack;
+  76   4            }
+  77   3          }
+  78   2          break;
+  79   2        case pwrsHk_commOff_ack:
+  80   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  81   3            Runtime_fromNow(&g_trxuv.runtime);
+  82   3            release = 1;
+  83   3          }
+  84   2          break;
+  85   2          // ---
+  86   2        case pwrsHk_taiTime_ack:
+  87   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  88   3            pwrs_time = extractFromBuffer(unsigned long, &i2c_rxbuffer[MCCIF_DATA_OFFSET]);
+  89   3            if (pwrs_time) // prevent invalid time to be set on obdh, check is redundant, since obdh_taiTime is 
+             -invalid
+  90   3              uptime.tai_time = pwrs_time;
+  91   3            release = 1;
+  92   3          }
+  93   2          break;
+  94   2        }
+  95   1        return release;
+  96   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    706    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     10    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

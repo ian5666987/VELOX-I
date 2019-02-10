@@ -1,0 +1,277 @@
+C51 COMPILER V9.02   SDCARD_GENERIC                                                        05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE SDCARD_GENERIC
+OBJECT MODULE PLACED IN sdcard_generic.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE sdcard_generic.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          #include <string.h>
+   5          
+   6          #include "C8051_SPI0.h"
+   7          #include "C8051_SPI0_int.h"
+   8          #include "C8051_delay.h"
+   9          
+  10          #include "sdcard_generic.h"
+  11          
+  12          #define SD_GO_IDLE_STATE            0
+  13          #define SD_SEND_OP_COND             1
+  14          //#define SD_SEND_IF_COND             8 //comment out so that we don't accidentally use them. But may be u
+             -sed for future improvement..
+  15          //#define SD_SEND_CSD                 9
+  16          //#define SD_STOP_TRANSMISSION        12
+  17          #define SD_SEND_STATUS              13
+  18          //#define SD_SET_BLOCK_LEN            16
+  19          #define SD_READ_SINGLE_BLOCK        17
+  20          //#define SD_READ_MULTIPLE_BLOCKS     18
+  21          #define SD_WRITE_SINGLE_BLOCK       24
+  22          //#define SD_WRITE_MULTIPLE_BLOCKS    25
+  23          //#define SD_ERASE_BLOCK_START_ADDR   32
+  24          //#define SD_ERASE_BLOCK_END_ADDR     33
+  25          //#define SD_ERASE_SELECTED_BLOCKS    38
+  26          //#define SD_HC_SEND_OP_COND          41 // ACMD
+  27          //#define SD_APP_CMD                  55
+  28          //#define SD_READ_OCR                 58
+  29          //#define SD_CRC_ON_OFF               59
+  30          
+  31          #define SD_CARD_BUFFER_SIZE         512
+  32          
+  33          #define SD_ASSERT                   0
+  34          #define SD_DEASSERT                 1
+  35          
+  36          void SD_initConfig() {
+  37   1        g_sdConfig.time.init = 1;
+  38   1        g_sdConfig.time.rnw = 1;
+  39   1        g_sdConfig.time.store = 150;
+  40   1        g_sdConfig.retry.cmd = 5;
+  41   1        g_sdConfig.retry.cmd_reply = 5;
+  42   1        g_sdConfig.retry.store_reply = 100;
+  43   1      }
+  44          
+  45          char SD_spiWriteByte(char value) {
+  46   1        SPI0_putGetChars(&value, 1);
+  47   1        return value;
+  48   1      }
+  49          
+  50          unsigned char SD_spiReadByte() {
+  51   1        unsigned char l_uc_spi_received_buffer = 0xff;
+  52   1        SPI0_putGetChars(&l_uc_spi_received_buffer, 1);
+  53   1        return l_uc_spi_received_buffer;
+  54   1      }
+C51 COMPILER V9.02   SDCARD_GENERIC                                                        05/20/2014 11:03:52 PAGE 2   
+
+  55          
+  56          // if there is need to change the polynomial, use 'extern' on global variable (for velox-1: no need)
+  57          unsigned char sd_crc7_ply = 0x12; // default value without initialization is chosen to be 0x12
+  58          
+  59          //Private function, only visible to SD data
+  60          unsigned char SD_crc7Rotate(unsigned char crc, unsigned char nxt_byte) {
+  61   1        unsigned char i, highest_bit;
+  62   1        for (i = 0; i < 8; ++i) {
+  63   2          highest_bit = crc >> 7;
+  64   2          crc = (crc << 1) + ((nxt_byte >> (7 - i)) & 0x01);
+  65   2          if (highest_bit)
+  66   2            crc ^= sd_crc7_ply;
+  67   2        }
+  68   1        return crc;
+  69   1      }
+  70          
+  71          unsigned char SD_crc7Update(void* msg, short length, unsigned char crc) {
+  72   1        unsigned short i = 0;
+  73   1        char* message = (char*) msg;
+  74   1        for (i = 0; i < length; ++i)
+  75   1          crc = SD_crc7Rotate(crc, message[i]);
+  76   1        return crc;
+  77   1      }
+  78          
+  79          unsigned char SD_crc7Publish(unsigned char crc) {
+  80   1        crc = SD_crc7Rotate(crc, 0);
+  81   1        crc |= 0x01;
+  82   1        return crc;
+  83   1      }
+  84          
+  85          char SD_getUntil(unsigned char response, unsigned char flag) {
+  86   1        unsigned char value;
+  87   1        unsigned char retry = 0;
+  88   1        for (retry = 0; retry < g_sdConfig.retry.cmd_reply; ++retry) {
+  89   2          value = SD_spiReadByte();
+  90   2          if ((value & flag) == response)
+  91   2            return 1;
+  92   2          Delay_us(10);
+  93   2        }
+  94   1        return 0;
+  95   1      }
+  96          
+  97          // return true if successful -> can trust value
+  98          // return false if limit reached -> do not trust content value
+  99          char SD_getUntilNot(unsigned char response, unsigned char flag, unsigned short delay_10us, unsigned char r
+             -etry_limit, unsigned char* value_p) {
+ 100   1        unsigned char retry;
+ 101   1        unsigned short i;
+ 102   1        for (retry = 0; retry < retry_limit; ++retry) {
+ 103   2          *value_p = SD_spiReadByte();
+ 104   2          if ((*value_p & flag) != response)
+ 105   2            return 1;
+ 106   2          for (i = 0; i < delay_10us; ++i)
+ 107   2            Delay_us(10);
+ 108   2        }
+ 109   1        return 0;
+ 110   1      }
+ 111          
+ 112          //expected minimum time: 0.03 + 0.01 + 0.005 = 0.045ms
+ 113          //expected maximum time: 0.3 + 0.3 + 0.05 = 0.65ms
+ 114          char SD_sendCommand(char command, unsigned long arg, unsigned char* value_p, unsigned short delay_10us) {
+ 115   1        char success;
+C51 COMPILER V9.02   SDCARD_GENERIC                                                        05/20/2014 11:03:52 PAGE 3   
+
+ 116   1        char array[6];
+ 117   1        array[0] = command | 0x40;
+ 118   1        memcpy(&array[1], &arg, 4);
+ 119   1        array[5] = SD_crc7Publish(SD_crc7Update(array, 5, 0)); // there should be a checksum here
+ 120   1        NSSMD0 = SD_ASSERT;
+ 121   1        SPI0_putChars(array, 6); //Min-max time: 0.03 - 0.3ms
+ 122   1        success = SD_getUntilNot(0xff, 0xff, delay_10us, g_sdConfig.retry.cmd_reply, value_p); // we do not expe
+             -ct to get 0xff return here, but other return is passed to the caller
+ 123   1        SD_spiReadByte(); //Min-max time: 0.005 - 0.05ms. Extra 8 clock for buffering, due to hardware synchroni
+             -zation problem.Some SD cards will return two extra bytes, others are one byte
+ 124   1        NSSMD0 = SD_DEASSERT;
+ 125   1      
+ 126   1        return success;
+ 127   1      }
+ 128          
+ 129          char SD_commandUntil(char cmd, unsigned long arg, char response, unsigned short delay_10us) {
+ 130   1        char success;
+ 131   1        unsigned char value;
+ 132   1        unsigned char retry;
+ 133   1        for (retry = 0; retry < g_sdConfig.retry.cmd; ++retry) { //Works on the 1st trial most of the time. Set 
+             -the number of retry to be 5 here.
+ 134   2          success = SD_sendCommand(cmd, arg, &value, delay_10us);
+ 135   2          if (success && value == response)
+ 136   2            return 1;
+ 137   2          Delay_us(10); //ian (2013-04-02): 10us works really well, gives about 10us delay here
+ 138   2        }
+ 139   1        return 0;
+ 140   1      }
+ 141          
+ 142          void SD_writeBlockData(void* buffer, short length) {
+ 143   1        short count;
+ 144   1        SD_spiWriteByte(0xfe); // Send start block token 0xfe (0x11111110) //Min-max time: 0.005 - 0.05ms
+ 145   1        SPI0int_process(SPI_put, buffer, length);
+ 146   1        for (count = length; count < SD_CARD_BUFFER_SIZE; ++count)
+ 147   1          SD_spiWriteByte(0x00); // Min-max time: 2.56 - 25.6ms
+ 148   1        SD_spiWriteByte(0xff); // transmit dummy CRC (16-bit), CRC is ignored here
+ 149   1        SD_spiWriteByte(0xff); // Min-max time: 0.01 - 0.1ms
+ 150   1      }
+ 151          
+ 152          void SD_readBlockData(void* buffer, short length) {
+ 153   1        short count;
+ 154   1        memset(buffer, 0xff, length);
+ 155   1        SPI0int_process(SPI_putGet, buffer, length);
+ 156   1        for (count = length; count < SD_CARD_BUFFER_SIZE; ++count)
+ 157   1          SD_spiReadByte(); // Min-max time: 2.56 - 25.6ms
+ 158   1        SD_spiReadByte(); // receive incoming CRC (16-bit), CRC is ignored here
+ 159   1        SD_spiReadByte();
+ 160   1        SD_spiReadByte(); // Extra 8 clock for buffering. Min-max time: 0.015 - 0.15ms
+ 161   1      }
+ 162          
+ 163          // expected minimum time: 0.045 + 0.1 + 0.01 + 0.095 = 0.16ms
+ 164          // expected maximum time: 0.95 + 6 + 0.1 + 3.5 = 10.55ms
+ 165          // experimental value: first time = 2 ms. Subsequent time < 1 ms
+ 166          // ian (2013-04-03): 1 ms x 1000 x 2 = 2 seconds, giving SD card some time to start.
+ 167          // Actual delay is 57% of the specified delay. (20s finished in 11.4s)
+ 168          // with 24.5MHz system clock, it is expected to be 90%. (20s finished in 18s)
+ 169          // with 22.1184MHz system clock, it is expected to be 99.75% (20s finished in 19.95s)
+ 170          // with adjustment, 30s finished in 28.6s.
+ 171          char SD_init() {
+ 172   1        unsigned char success = 1;
+ 173   1        unsigned char dummy_value;
+ 174   1        char array[10];
+C51 COMPILER V9.02   SDCARD_GENERIC                                                        05/20/2014 11:03:52 PAGE 4   
+
+ 175   1        memset(array, 0xff, sizeof array);
+ 176   1        if (!SD_sendCommand(SD_SEND_STATUS, 0, &dummy_value, 1)) { //Min-max time: 0.045-0.65ms ian (2013-05-29)
+             -: there was a silly mistake here =.=' -> SD_sendCommand(SD_SEND_STATUS, 0) is changed to !SD_sendCommand(SD_SEND_STATUS,
+             - 0)
+ 177   2          SPI0_putChars(array, 10); // send 10 bytes of data to make sure that SD card is receiving. Min-max tim
+             -e: 0.05-0.5ms
+ 178   2          success = SD_commandUntil(SD_GO_IDLE_STATE, 0, 0x01, g_sdConfig.time.init); // ian (2013-07-22): first
+             - initialization time has to be set higher even 42ms is not enough for SANDisk SD card! Set as 70ms x 9 = 630ms for safet
+             -y reason. Ian (2012-05-15): 0x01 is the expected return from SD card when it receives idle state command.
+ 179   2          if (!success)
+ 180   2            return 0;
+ 181   2          SPI0_putChars(array, 2); // Flushing, to make sure SD card is clear to receive command. Min-max time: 
+             -0.01 - 0.1ms
+ 182   2          success = SD_commandUntil(SD_SEND_OP_COND, 0, 0x00, 1);
+ 183   2        }
+ 184   1        return success;
+ 185   1      }
+ 186          
+ 187          // expected minimum time: 0.16 + 0.045 + 0.005 + 2.56 + 0.01 + 0.055 + 1.5 + 0.005 = 4.34 ms
+ 188          // expected maximum time: 10.55 + 0.65 + 0.05 + 25.6 + 0.1 + 0.3 + 150 + 0.05 = 187.3 ms
+ 189          // experimental value: long = 83 ms. short = 12 ms.
+ 190          #define SD_CARD_COMMAND_SHIFT_BIT  9
+ 191          char SD_writeSingleBlock(unsigned long block, void* buffer, short length) {
+ 192   1        unsigned char value;
+ 193   1        char success;
+ 194   1        if (!SD_init() || SD_CARD_BUFFER_SIZE < length) //ian (2013-04-09): add this. //Min-max time: 0.16 - 10.
+             -55ms
+ 195   1          return 0;
+ 196   1        success = SD_commandUntil(SD_WRITE_SINGLE_BLOCK, block << SD_CARD_COMMAND_SHIFT_BIT, 0, g_sdConfig.time.
+             -rnw); //ian 2013-07-22: 70us microsecond x 5 retry is minimum delay for SANDisk. Put 200us x 9 = 1.8ms for safety reason
+ 197   1        if (!success) // sdSendCommand shall return non-zero value when there is an error by hardware design.. c
+             -heck for SD status: 0x00 - OK (No flags set). // write a Block command. Min-max time: 0.045-0.65ms
+ 198   1          return 0;
+ 199   1        NSSMD0 = SD_ASSERT;
+ 200   1        SD_writeBlockData(buffer, length);
+ 201   1        if (!SD_getUntil(0x05, 0x1f)) //response= 0xXXX0AAA1; AAA='010' - data accepted, //AAA='101'-data reject
+             -ed due to CRC error. //AAA='110'-data rejected due to write error
+ 202   1          return 0;
+ 203   1        if (!SD_getUntilNot(0x00, 0xff, g_sdConfig.time.store, g_sdConfig.retry.store_reply, &value)) // we are 
+             -waiting for any non zero reply from SD card
+ 204   1          return 0;
+ 205   1        SD_spiWriteByte(0xff); // Extra 8 clock for buffering. Min-max time: 0.005 - 0.05ms
+ 206   1        NSSMD0 = SD_DEASSERT;
+ 207   1        return 1;
+ 208   1      }
+ 209          
+ 210          //expected minimum time: 0.16 + 0.045 + 0.055 + 2.56 + 0.015 = 2.835ms
+ 211          //expected maximum time: 10.55 + 0.65 + 0.3 + 25.6 + 0.15 = 37.25ms
+ 212          //experimental value: long = ?? ms. short = 11 ms. Always faster than writing!
+ 213          char SD_readSingleBlock(unsigned long block, void* buffer, short length) {
+ 214   1        char success;
+ 215   1        if (!SD_init() || SD_CARD_BUFFER_SIZE < length) //ian (2013-04-09): add this. //Min-max time: 0.16 - 10.
+             -55ms
+ 216   1          return 0;
+ 217   1        success = SD_commandUntil(SD_READ_SINGLE_BLOCK, block << SD_CARD_COMMAND_SHIFT_BIT, 0, g_sdConfig.time.r
+             -nw); //ian 2013-07-22: 70us microsecond x 5 retry is minimum delay for SANDisk. Put 200us x 9 = 1.8ms for safety reason
+ 218   1        if (!success) // read a Block command. Min-max time: 0.045-0.65ms. check for SD status: 0x00 - OK (No fl
+             -ags set)
+ 219   1          return 0;
+ 220   1        NSSMD0 = SD_ASSERT;
+ 221   1        if (!SD_getUntil(0xfe, 0xff)) // 0xfe is the start block token expected to be received from SD card when
+             - it is ready to send one block of data.
+C51 COMPILER V9.02   SDCARD_GENERIC                                                        05/20/2014 11:03:52 PAGE 5   
+
+ 222   1          return 0;
+ 223   1        SD_readBlockData(buffer, length);
+ 224   1        NSSMD0 = SD_DEASSERT;
+ 225   1        return 1;
+ 226   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1772    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =    109    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,63 @@
+C51 COMPILER V9.02   C8051_UART1TIMER1                                                     05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_UART1TIMER1
+OBJECT MODULE PLACED IN C8051_UART1Timer1.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_UART1Timer1.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          // Input: sys_clk : system clock
+   6          //        prescaler : timer 1 prescaler based on oscillator setting
+   7          //        baudrate : desired baudrate to be set
+   8          // This function configures the Timer1 as a 16-bit timer, interrupt disabled, T1 pin not used
+   9          // and timer itself is disabled
+  10          
+  11          // VELOX-I settings:
+  12          //--------------------------
+  13          // PWRS: timer0 uses sysclk all the time. high gear timer1 uses sysclk/48, medium gear sysclk/12, gear1-2 
+             -sysclk/4, gear0 sysclk
+  14          // OBDH: high gear uses sysclk/12, else uses sysclk for both timer1 and timer0
+  15          // ADCS: high gear uses sysclk/48, else uses sysclk/12 for both timer1 and timer0
+  16          void UART1Timer1_init(long sys_clk, char prescaler, long baudrate) {
+  17   1        char SFRPAGE_SAVE = SFRPAGE; // Save Current SFR page
+  18   1        char timer1_reload_hi;
+  19   1      
+  20   1        // Set SFR page
+  21   1        SFRPAGE = TIMER01_PAGE; //Timer 0 or 1 page
+  22   1      
+  23   1        timer1_reload_hi = (float) sys_clk / prescaler / baudrate / 2 + 0.5;
+  24   1        TH1 = -(timer1_reload_hi); //Setting reload value
+  25   1      
+  26   1        //Timer1 in 8-bit mode
+  27   1        //Timer0 settings are retained
+  28   1        TMOD &= 0x0F;
+  29   1        TMOD |= 0x20;
+  30   1      
+  31   1        //Timer1 interrupt disabled
+  32   1        ET1 = 0;
+  33   1        //IP |= 0x08; // set timer 1 overflow high priority
+  34   1      
+  35   1        //Timer1 ON
+  36   1        TR1 = 1;
+  37   1        // Restore SFR page
+  38   1        SFRPAGE = SFRPAGE_SAVE;
+  39   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    172    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     11    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,88 @@
+C51 COMPILER V9.02   C8051_SPI0                                                            05/20/2014 11:03:50 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_SPI0
+OBJECT MODULE PLACED IN C8051_SPI0.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_SPI0.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "C8051_SPI0.h"
+   6          #include "C8051_delay.h"
+   7          
+   8          extern short SPI0_failures;
+   9          extern short SPI0_timeout; // default timeout
+  10          
+  11          // private function, use SPI0_getPutChars instead ! warning this page does not need to set SFRPAGE = SPI0_
+             -PAGE;
+  12          // Min-max time: 0.005-0.05ms with SPI0_timeout = 25
+  13          char SPI0_getPut(char* value) {
+  14   1        short delay;
+  15   1        // ---
+  16   1        delay = 0;
+  17   1        while (SPI0CFG & 0x80) // busy
+  18   1          if (SPI0_timeout < ++delay) {
+  19   2            ++SPI0_failures;
+  20   2            return 0;
+  21   2            break;
+  22   2          }
+  23   1        // ---
+  24   1        SPI0DAT = *value; // send
+  25   1        // ---
+  26   1        delay = 0;
+  27   1        while (!SPIF)
+  28   1          if (SPI0_timeout < ++delay) {
+  29   2            ++SPI0_failures;
+  30   2            break;
+  31   2          }
+  32   1        // ---
+  33   1        *value = SPI0DAT; // recv
+  34   1        SPIF = 0;
+  35   1        return 1;
+  36   1      }
+  37          
+  38          // function writes length chars from ptr to SPI and simultaneously writes reply into ptr
+  39          void SPI0_putGetChars(void* buffer, short length) {
+  40   1        short count;
+  41   1        char* message = (char*) buffer;
+  42   1        char SFRPAGE_SAVE = SFRPAGE;
+  43   1        SFRPAGE = SPI0_PAGE;
+  44   1        for (count = 0; count < length; ++count)
+  45   1          SPI0_getPut(&message[count]); // return value is ignored
+  46   1        SFRPAGE = SFRPAGE_SAVE;
+  47   1      }
+  48          
+  49          // function writes length chars from ptr to SPI
+  50          // the reply is dropped on purpose
+  51          void SPI0_putChars(void* buffer, short length) {
+  52   1        short count;
+  53   1        char* message = (char*) buffer;
+  54   1        char temp;
+C51 COMPILER V9.02   C8051_SPI0                                                            05/20/2014 11:03:50 PAGE 2   
+
+  55   1        char SFRPAGE_SAVE = SFRPAGE;
+  56   1        SFRPAGE = SPI0_PAGE;
+  57   1        for (count = 0; count < length; ++count) {
+  58   2          temp = message[count];
+  59   2          SPI0_getPut(&temp); // reply is discarded, return value is ignored
+  60   2        }
+  61   1        SFRPAGE = SFRPAGE_SAVE;
+  62   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    471    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     28    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

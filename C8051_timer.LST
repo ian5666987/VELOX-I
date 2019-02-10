@@ -1,0 +1,335 @@
+C51 COMPILER V9.02   C8051_TIMER                                                           12/19/2012 10:27:00 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_TIMER
+OBJECT MODULE PLACED IN C8051_timer.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_timer.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          #include "C8051_timer.h"
+   5          #include "system_config.h"
+   6          
+   7          sfr16 RCAP2 = 0xCA; //Timer 2 reload register
+   8          sfr16 TMR2 = 0xCC; //Timer 2 register
+   9          
+  10          sfr16 RCAP3 = 0xCA; //Timer 3 capture/reload
+  11          sfr16 TMR3 = 0xCC; //Timer 3
+  12          
+  13          sfr16 RCAP4 = 0xCA; //Timer 4 reload register
+  14          sfr16 TMR4 = 0xCC; //Timer 4 register
+  15          
+  16          char timer0_reload_hi;
+  17          char timer0_reload_lo;
+  18          
+  19          void Timer0_setReload() {
+  20   1        char SFRPAGE_SAVE = SFRPAGE;
+  21   1        SFRPAGE = TIMER01_PAGE;
+  22   1      
+  23   1        TH0 = timer0_reload_hi;
+  24   1        TL0 = timer0_reload_lo;
+  25   1        SFRPAGE = SFRPAGE_SAVE;
+  26   1      }
+  27          
+  28          // Timer 0 Initialisation
+  29          
+  30          // Return Value : None
+  31          // Parameters   : None
+  32          //
+  33          // This function configures the Timer0 as a 16-bit timer, interrupt enabled.
+  34          // Using the Ext osc. at 28636360Hz or INT osc at 24.5MHz (for prescaling, refer to
+  35          // definitions at top of script)
+  36          //
+  37          // Timer0 will overflow every 1ms, triggering ISR
+  38          //
+  39          // Note: The Timer0 uses a 1:4 prescaler.  If this setting changes, the
+  40          // TIMER_PRESCALER constant must also be changed.
+  41          
+  42          void Timer0_init(char p_c_CKCON) {
+  43   1        //Save Current SFR page
+  44   1        char SFRPAGE_SAVE = SFRPAGE;
+  45   1      
+  46   1        timer0_reload_hi = 0xFB;//timer0_reload;
+  47   1        timer0_reload_lo = 0xFB;//timer0_reload;
+  48   1      
+  49   1      
+  50   1        Timer0_setReload();
+  51   1      
+  52   1        //Set SFR page
+  53   1        SFRPAGE = TIMER01_PAGE;
+  54   1      
+  55   1        //TMOD: Timer Mode Register
+C51 COMPILER V9.02   C8051_TIMER                                                           12/19/2012 10:27:00 PAGE 2   
+
+  56   1        //Bit 7: GATE1: Timer 1 Gate Control.
+  57   1        //0: Timer 1 enabled when TR1 = 1 irrespective of INT1_N logic level.
+  58   1        //1: Timer 1 enabled only when TR1 = 1 AND INT1_N = logic 1.
+  59   1      
+  60   1        //Bit 6: C/T1: Counter/Timer 1 Select.
+  61   1        //0: Timer Function: Timer 1 incremented by clock defined by T1M bit (CKCON.4).
+  62   1        //1: Counter Function: Timer 1 incremented by high-to-low transitions on external input pin (T1).
+  63   1      
+  64   1        //Bits 5–4: T1M1–T1M0: Timer 1 Mode Select.
+  65   1        //These bits select the Timer 1 operation mode.
+  66   1        //T1M1  T1M0  Mode
+  67   1        //0   0   Mode 0: 13-bit counter/timer
+  68   1        //0   1   Mode 1: 16-bit counter/timer
+  69   1        //1   0   Mode 2: 8-bit counter/timer with auto-reload
+  70   1        //1   1   Mode 3: Timer 1 inactive
+  71   1      
+  72   1        //Bit 3: GATE0: Timer 0 Gate Control.
+  73   1        //0: Timer 0 enabled when TR0 = 1 irrespective of /INT0 logic level.
+  74   1        //1: Timer 0 enabled only when TR0 = 1 AND /INT0 = logic 1.
+  75   1      
+  76   1        //Bit 2: C/T0: Counter/Timer Select.
+  77   1        //0: Timer Function: Timer 0 incremented by clock defined by T0M bit (CKCON.3).
+  78   1        //1: Counter Function: Timer 0 incremented by high-to-low transitions on external input pin (T0).
+  79   1      
+  80   1        //Bits 1–0: T0M1–T0M0: Timer 0 Mode Select.
+  81   1        //These bits select the Timer 0 operation mode.
+  82   1        //T0M1  T0M0  Mode
+  83   1        //0   0   Mode 0: 13-bit counter/timer
+  84   1        //0   1   Mode 1: 16-bit counter/timer
+  85   1        //1   0   Mode 2: 8-bit counter/timer with auto-reload
+  86   1        //1   1   Mode 3: Two 8-bit counter/timers
+  87   1      
+  88   1        //Timer0 in 16-bit mode
+  89   1        TMOD &= 0xF0;
+  90   1        TMOD |= 0x02;
+  91   1      
+  92   1        //CKCON : Clock Control
+  93   1        //Bits 7–5: UNUSED. Read = 000b, Write = don’t care.
+  94   1        //Bit 4: T1M: Timer 1 Clock Select.
+  95   1        //This select the clock source supplied to Timer 1. T1M is ignored when C/T1 is set to logic 1.
+  96   1        //0: Timer 1 uses the clock defined by the prescale bits, SCA1–SCA0.
+  97   1        //1: Timer 1 uses the system clock.
+  98   1        //Bit 3: T0M: Timer 0 Clock Select.
+  99   1        //This bit selects the clock source supplied to Timer 0. T0M is ignored when C/T0 is set to logic 1.
+ 100   1        //0: Counter/Timer 0 uses the clock defined by the prescale bits, SCA1-SCA0.
+ 101   1        //1: Counter/Timer 0 uses the system clock.
+ 102   1        //Bit 2: UNUSED. Read = 0b, Write = don’t care.
+ 103   1        //Bits 1–0: SCA1–SCA0: Timer 0/1 Prescale Bits
+ 104   1        //These bits control the division of the clock supplied to Timer 0 and/or Timer 1 if configured to use p
+             -rescaled clock inputs.
+ 105   1        //SCA1  SCA0  Prescaled Clock
+ 106   1        //0   0   System clock divided by 12
+ 107   1        //0   1   System clock divided by 4
+ 108   1        //1   0   System clock divided by 48
+ 109   1        //1   1   External clock divided by 8
+ 110   1      
+ 111   1        //Timer0 uses a 1:4 prescaler   (after 2012-oct-17)
+ 112   1        CKCON = p_c_CKCON;
+ 113   1      
+ 114   1        //Timer0 interrupt enabled
+ 115   1        ET0 = 0;
+ 116   1      //  IP |= 0x02; // set timer 0 overflow high priority
+C51 COMPILER V9.02   C8051_TIMER                                                           12/19/2012 10:27:00 PAGE 3   
+
+ 117   1      
+ 118   1        //  SFR Definition 23.1. TCON: Timer Control
+ 119   1        //  Bit7: TF1: Timer 1 Overflow Flag.
+ 120   1        //  Set by hardware when Timer 1 overflows. This flag can be cleared by software but is automatically
+ 121   1        //  cleared when the CPU vectors to the Timer 1 interrupt service routine.
+ 122   1        //  0: No Timer 1 overflow detected.
+ 123   1        //  1: Timer 1 has overflowed.
+ 124   1      
+ 125   1        //  Bit6: TR1: Timer 1 Run Control.
+ 126   1        //  0: Timer 1 disabled.
+ 127   1        //  1: Timer 1 enabled.
+ 128   1      
+ 129   1        //  Bit5: TF0: Timer 0 Overflow Flag.
+ 130   1        //  Set by hardware when Timer 0 overflows. This flag can be cleared by software but is automatically
+ 131   1        //  cleared when the CPU vectors to the Timer 0 interrupt service routine.
+ 132   1        //  0: No Timer 0 overflow detected.
+ 133   1        //  1: Timer 0 has overflowed.
+ 134   1      
+ 135   1        //  Bit4: TR0: Timer 0 Run Control.
+ 136   1        //  0: Timer 0 disabled.
+ 137   1        //  1: Timer 0 enabled.
+ 138   1      
+ 139   1        //  Bit3: IE1: External Interrupt 1.
+ 140   1        //  This flag is set by hardware when an edge/level of type defined by IT1 is detected. It can be
+ 141   1        //  cleared by software but is automatically cleared when the CPU vectors to the External Interrupt
+ 142   1        //  1 service routine if IT1 = 1. This flag is the inverse of the /INT1 signal.
+ 143   1      
+ 144   1        //  Bit2: IT1: Interrupt 1 Type Select.
+ 145   1        //  This bit selects whether the configured /INT1 interrupt will be falling-edge sensitive or
+ 146   1        //  active-low.
+ 147   1        //  0: /INT1 is level triggered, active-low.
+ 148   1        //  1: /INT1 is edge triggered, falling-edge.
+ 149   1      
+ 150   1        //  Bit1: IE0: External Interrupt 0.
+ 151   1        //  This flag is set by hardware when an edge/level of type defined by IT0 is detected. It can be
+ 152   1        //  cleared by software but is automatically cleared when the CPU vectors to the External Interrupt
+ 153   1        //  0 service routine if IT0 = 1. This flag is the inverse of the /INT0 signal.
+ 154   1      
+ 155   1        //  Bit0: IT0: Interrupt 0 Type Select.
+ 156   1        //  This bit selects whether the configured /INT0 interrupt will be falling-edge sensitive or
+ 157   1        //  active-low.
+ 158   1        //  0: /INT0 is level triggered, active logic-low.
+ 159   1        //  1: /INT0 is edge triggered, falling-edge.
+ 160   1      
+ 161   1        //Timer0 ON
+ 162   1        TR0 = 1;
+ 163   1      
+ 164   1        //Restore SFR page
+ 165   1        SFRPAGE = SFRPAGE_SAVE;
+ 166   1      }
+ 167          
+ 168          //-----------------------------------------------------------------------------
+ 169          // Timer 1 Initialisation
+ 170          
+ 171          // Return Value : None
+ 172          // Parameters   : None
+ 173          //
+ 174          // This function configures the Timer1 as a 16-bit timer, interrupt disabled, T1 pin not used
+ 175          // and timer itself is disabled
+ 176          //
+ 177          //-----------------------------------------------------------------------------
+ 178          
+C51 COMPILER V9.02   C8051_TIMER                                                           12/19/2012 10:27:00 PAGE 4   
+
+ 179          void Timer1_init(long sys_clk, char prescaler) {
+ 180   1      //Save Current SFR page
+ 181   1        char SFRPAGE_SAVE = SFRPAGE;
+ 182   1        char timer1_reload_hi;
+ 183   1      //Set SFR page
+ 184   1        SFRPAGE = TIMER01_PAGE; //Timer 0 or 1 page
+ 185   1        timer1_reload_hi = (float)sys_clk / prescaler / BAUDRATE_1 / 2 + 0.5;
+ 186   1        TH1 = -(timer1_reload_hi); //Setting reload value
+ 187   1      
+ 188   1        //Timer1 in 8-bit mode
+ 189   1        TMOD &= 0x0F;
+ 190   1        TMOD |= 0x20;
+ 191   1      
+ 192   1        //Timer1 uses a 1:4 prescaler
+ 193   1      //  CKCON &= 0xEF;
+ 194   1      //  CKCON |= 0x00;
+ 195   1      
+ 196   1        //Timer1 interrupt disabled
+ 197   1        ET1 = 0;
+ 198   1        //IP |= 0x08; // set timer 1 overflow high priority
+ 199   1      
+ 200   1        //Timer1 ON
+ 201   1        TR1 = 1;
+ 202   1      //
+ 203   1      //  //Restore SFR page
+ 204   1        SFRPAGE = SFRPAGE_SAVE;
+ 205   1      }
+ 206          
+ 207          //-----------------------------------------------------------------------------
+ 208          // Timer2_Init
+ 209          //-----------------------------------------------------------------------------
+ 210          //
+ 211          // Return Value : None
+ 212          // Parameters   : None
+ 213          //
+ 214          // funtion: auto reload mode with no interrupt, not running
+ 215          //-----------------------------------------------------------------------------
+ 216          
+ 217          void Timer2_init(long sys_clk) {
+ 218   1      
+ 219   1        char SFRPAGE_SAVE = SFRPAGE; // Save Current SFR page
+ 220   1        SFRPAGE = TMR2_PAGE;
+ 221   1        TMR2CN = 0x00; // Timer2 external enable off;
+ 222   1                       // Timer2 in timer mode;
+ 223   1        // Transactions on T2EX ignored
+ 224   1        // Timer2 in auto-reload mode
+ 225   1        TMR2CF = 0x08; // Timer2 uses sysclk
+ 226   1                       // Timer2 output not available on pin T2
+ 227   1                       // Timer2 counts up
+ 228   1        RCAP2 = -(sys_clk/1000); // Timer2 dummy value
+ 229   1        TMR2 = RCAP2; // ~25ms (for SMBus low timeout detect)
+ 230   1        ET2 = 1; // disable timer 2 interrupt
+ 231   1        TR2 = 1; // do not start Timer2
+ 232   1        SFRPAGE = SFRPAGE_SAVE; // Restore SFR page detector
+ 233   1      
+ 234   1      }
+ 235          
+ 236          //-----------------------------------------------------------------------------
+ 237          // Timer3_Init()
+ 238          //-----------------------------------------------------------------------------
+ 239          //
+ 240          // Return Value : None
+C51 COMPILER V9.02   C8051_TIMER                                                           12/19/2012 10:27:00 PAGE 5   
+
+ 241          // Parameters   : None
+ 242          // Timer 3 is used to detect SCL low timeouts.
+ 243          // Timer 3 is forced to reload when SCL is high, and forced to count when SCL is low.
+ 244          // With Timer 3 enabled and configured to overflow after 25 ms (and TOE set), a
+ 245          // Timer 3 overflow indicates a SCL low timeout; the Timer 3 interrupt service
+ 246          // routine can then be used to reset SMBus0 communication in the event of an SCL low timeout.
+ 247          //-----------------------------------------------------------------------------
+ 248          
+ 249          void Timer3_init(long sys_clk) {
+ 250   1      
+ 251   1        char SFRPAGE_SAVE = SFRPAGE; // Save Current SFR page
+ 252   1        SFRPAGE = TMR3_PAGE;
+ 253   1        TMR3CN = 0x00; // Timer3 external enable off;
+ 254   1                       // Timer3 in timer mode;
+ 255   1                       // Timer3 in auto-reload mode
+ 256   1        TMR3CF = 0x00; // Timer3 uses sysclk/12
+ 257   1                       // Timer3 output not available
+ 258   1                       // Timer3 counts up
+ 259   1        RCAP3 = -(sys_clk / 12 / 40); // Timer 3 configured to overflow after
+ 260   1        TMR3 = RCAP3; // ~25ms (for SMBus low timeout detect) (1/0.025 = 40)
+ 261   1        EIE2 |= 0x01; // Timer3 interrupt enable
+ 262   1      //   EIP2 &= 0xFE;                // Timer3 set as low priority
+ 263   1        TR3 = 1; // Start Timer3
+ 264   1        SFRPAGE = SFRPAGE_SAVE; // Restore SFR page detector
+ 265   1      }
+ 266          
+ 267          //-----------------------------------------------------------------------------
+ 268          // Timer4_Init()
+ 269          //-----------------------------------------------------------------------------
+ 270          //
+ 271          // Return Value : None
+ 272          // Parameters   : None
+ 273          //
+ 274          // Used for UART0 baudrate generator
+ 275          //-----------------------------------------------------------------------------
+ 276          
+ 277          void Timer4_init(long sys_clk) {
+ 278   1        //Save current SFR page
+ 279   1        char SFRPAGE_SAVE = SFRPAGE;
+ 280   1        short timer4_reload;
+ 281   1      
+ 282   1        //Switch to Timer 4
+ 283   1        SFRPAGE = TMR4_PAGE;
+ 284   1      
+ 285   1        //Timer 4 in 16-bit auto-reload up timer mode
+ 286   1        TMR4CN = 0x00;
+ 287   1      
+ 288   1        //SYSCLK is time base; no output, up count only
+ 289   1        TMR4CF = 0x08;
+ 290   1        timer4_reload = (float)sys_clk / BAUDRATE_0 / 16 + 0.5;
+ 291   1        RCAP4 = -(timer4_reload);
+ 292   1      
+ 293   1        TMR4 = RCAP4;
+ 294   1      
+ 295   1        EIE2 &= 0xFB; //to disble T4 int, added by SWL 19 Mar 12
+ 296   1        //Start Timer 4
+ 297   1        TR4 = 1;
+ 298   1      
+ 299   1        //Restore SFRPAGE
+ 300   1        SFRPAGE = SFRPAGE_SAVE;
+ 301   1      }
+
+C51 COMPILER V9.02   C8051_TIMER                                                           12/19/2012 10:27:00 PAGE 6   
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    466    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     29    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

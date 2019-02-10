@@ -1,0 +1,74 @@
+C51 COMPILER V9.02   MCCIF_SPY                                                             05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE MCCIF_SPY
+OBJECT MODULE PLACED IN mccif_spy.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE mccif_spy.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "velox_macros.h"
+   6          #include "velox_checksum.h"
+   7          
+   8          #include "mccif_xdata.h"
+   9          
+  10          short Mccif_getArgLength(void* buffer) {
+  11   1        char* message = (char*) buffer; // name required for macro
+  12   1        return extractFromBuffer(unsigned char, message + MCCIF_LENGTH_OFFSET);
+  13   1      }
+  14          
+  15          short Mccif_getFrameLength(void* buffer) {
+  16   1        return MCCIF_DATA_OFFSET + Mccif_getArgLength(buffer) + 2; // 2 = length of checksum
+  17   1      }
+  18          
+  19          unsigned short Mccif_getBlobIndex(void* buffer) {
+  20   1        char* message = (char*) buffer;
+  21   1        return extractFromBuffer(unsigned short, message + MCCIF_DATA_OFFSET);
+  22   1      }
+  23          
+  24          char Mccif_getBlobType(void* buffer) {
+  25   1        char* message = (char*) buffer;
+  26   1        return extractFromBuffer(char, message + MCCIF_DATA_OFFSET + 2);
+  27   1      }
+  28          
+  29          unsigned short Mccif_getBlobCount(void* buffer) {
+  30   1        char* message = (char*) buffer;
+  31   1        return extractFromBuffer(short, message + MCCIF_DATA_OFFSET + 3);
+  32   1      }
+  33          
+  34          // also empty content (length==0) is considered valid
+  35          // frames with empty content (length==0) are sent as a confirmation reply for set commands
+  36          char Mccif_isValidContent(void* buffer, short max_length) {
+  37   1        char success = 0;
+  38   1        char* message = (char*) buffer;
+  39   1        short length;
+  40   1        if (MCCIF_DATA_OFFSET + 2 <= max_length) { // message must at least hold header and crc
+  41   2          success = memcmp(message, mccif_xdatMarker, sizeof mccif_xdatMarker) == 0;
+  42   2          length = extractFromBuffer(unsigned char, message + MCCIF_LENGTH_OFFSET);
+  43   2          success &= 0 <= length && MCCIF_DATA_OFFSET + length + 2 <= max_length; // converts to content length 
+             -for comparison
+  44   2          success &= Checksum_isValid(message, MCCIF_DATA_OFFSET + length + 2);
+  45   2        }
+  46   1        return success;
+  47   1      }
+  48          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    550    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     38    ----
+C51 COMPILER V9.02   MCCIF_SPY                                                             05/20/2014 11:03:51 PAGE 2   
+
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

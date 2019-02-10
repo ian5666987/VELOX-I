@@ -1,0 +1,93 @@
+C51 COMPILER V9.02   C8051_EXTERN_INT                                                      12/30/2012 20:18:34 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_EXTERN_INT
+OBJECT MODULE PLACED IN C8051_extern_int.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_extern_int.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          #include "C8051_extern_int.h"
+   5          
+   6          // Ext_Interrupt_Init
+   7          // This function configures and enables /INT0 and /INT1 (External Interrupts)
+   8          // as negative edge-triggered.
+   9          void Ext_Interrupt_Init(void) {
+  10   1        char SFRPAGE_SAVE = SFRPAGE;
+  11   1        SFRPAGE = TIMER01_PAGE;
+  12   1      
+  13   1        //  SFR Definition 23.1. TCON: Timer Control
+  14   1        //  Bit7: TF1: Timer 1 Overflow Flag.
+  15   1        //  Set by hardware when Timer 1 overflows. This flag can be cleared by software but is automatically
+  16   1        //  cleared when the CPU vectors to the Timer 1 interrupt service routine.
+  17   1        //  0: No Timer 1 overflow detected.
+  18   1        //  1: Timer 1 has overflowed.
+  19   1      
+  20   1        //  Bit6: TR1: Timer 1 Run Control.
+  21   1        //  0: Timer 1 disabled.
+  22   1        //  1: Timer 1 enabled.
+  23   1      
+  24   1        //  Bit5: TF0: Timer 0 Overflow Flag.
+  25   1        //  Set by hardware when Timer 0 overflows. This flag can be cleared by software but is automatically
+  26   1        //  cleared when the CPU vectors to the Timer 0 interrupt service routine.
+  27   1        //  0: No Timer 0 overflow detected.
+  28   1        //  1: Timer 0 has overflowed.
+  29   1      
+  30   1        //  Bit4: TR0: Timer 0 Run Control.
+  31   1        //  0: Timer 0 disabled.
+  32   1        //  1: Timer 0 enabled.
+  33   1      
+  34   1        //  Bit3: IE1: External Interrupt 1.
+  35   1        //  This flag is set by hardware when an edge/level of type defined by IT1 is detected. It can be
+  36   1        //  cleared by software but is automatically cleared when the CPU vectors to the External Interrupt
+  37   1        //  1 service routine if IT1 = 1. This flag is the inverse of the /INT1 signal.
+  38   1      
+  39   1        //  Bit2: IT1: Interrupt 1 Type Select.
+  40   1        //  This bit selects whether the configured /INT1 interrupt will be falling-edge sensitive or
+  41   1        //  active-low.
+  42   1        //  0: /INT1 is level triggered, active-low.
+  43   1        //  1: /INT1 is edge triggered, falling-edge.
+  44   1      
+  45   1        //  Bit1: IE0: External Interrupt 0.
+  46   1        //  This flag is set by hardware when an edge/level of type defined by IT0 is detected. It can be
+  47   1        //  cleared by software but is automatically cleared when the CPU vectors to the External Interrupt
+  48   1        //  0 service routine if IT0 = 1. This flag is the inverse of the /INT0 signal.
+  49   1      
+  50   1        //  Bit0: IT0: Interrupt 0 Type Select.
+  51   1        //  This bit selects whether the configured /INT0 interrupt will be falling-edge sensitive or
+  52   1        //  active-low.
+  53   1        //  0: /INT0 is level triggered, active logic-low.
+  54   1        //  1: /INT0 is edge triggered, falling-edge.
+  55   1      
+C51 COMPILER V9.02   C8051_EXTERN_INT                                                      12/30/2012 20:18:34 PAGE 2   
+
+  56   1        //Set IT1 & IT0 to edge triggered, falling edged.
+  57   1        TCON |= 0x05;
+  58   1      
+  59   1        //disable INT0_N interrupt
+  60   1        EX0 = 0;
+  61   1        //IP &= 0xFE; //Set INT0_N to be low priority
+  62   1      
+  63   1        //disable INT1_N interrupt
+  64   1        EX1 = 0;
+  65   1        //IP &= 0xFB; //Set INT1_N to be low priority
+  66   1      
+  67   1        SFRPAGE = SFRPAGE_SAVE;
+  68   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     24    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      1    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

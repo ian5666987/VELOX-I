@@ -1,0 +1,108 @@
+C51 COMPILER V9.02   C8051_ADC                                                             05/20/2014 11:03:50 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_ADC
+OBJECT MODULE PLACED IN C8051_adc.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_adc.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "C8051_delay.h"
+   6          
+   7          // Refer to page 62, ADC0 Conversion Clock should be less than or equal to 2.5MHz
+   8          #define SAR_CLK         2500000L
+   9          #define SAR_CLK_SLOW  750000L //ian 2013-07-22: this is the maximum to compensate 3,062,500 Hz (gear0) clo
+             -ck
+  10          
+  11          sfr16 ADC0 = 0xBE; // ADC0 data register
+  12          
+  13          volatile float adc0_to_mV = 0.0; // deliberately set to 0 to ensure init function is called; adc0_to_mV is
+             - set in init function
+  14          volatile unsigned char adc0_delay = 10; // value can be set via ADC0_setDelayUs, pg 59, 72.
+  15          
+  16          void ADC0_setDelayUs(unsigned char delay) {
+  17   1        adc0_delay = delay;
+  18   1      }
+  19          
+  20          // Input:           sys_clk: system clock of the controller
+  21          //                  p_ref_mv: voltage reference of the controller
+  22          // Overview:        This function will be executed to configure and initialize ADC0.
+  23          void ADC0_init(long sys_clk, short vref_mv) {
+  24   1        char SFRPAGE_SAVE = SFRPAGE;
+  25   1        SFRPAGE = ADC0_PAGE;
+  26   1        //ADC0 disabled; normal tracking mode; ADC0 conversions are initiated every write of '1' to AD0BUSY; ADC
+             -0 data is right-justified
+  27   1        ADC0CN = 0x40; // Refer to page 63
+  28   1        // Enable internal temperature  sensor, ADC bias generator, internal reference buffer
+  29   1        REF0CN = 0x07; // Refer to page 114
+  30   1        // AIN inputs are independent single-ended inputs (default)
+  31   1        AMX0CF = 0x00; // Refer to page 60
+  32   1        // Select internal temperature sensor as the ADC mux input
+  33   1        AMX0SL = 0x0F; // Refer to page 61
+  34   1        // ADC conversion clock = 2.5MHz, Internal Amplifier Gain (PGA) = 1 (default);
+  35   1        if (sys_clk > 12000000L)
+  36   1              ADC0CF = ((sys_clk / SAR_CLK / 2) - 1) << 3; // Refer to page 62
+  37   1        else
+  38   1              ADC0CF = ((sys_clk / SAR_CLK_SLOW / 2) - 1) << 3; // Refer to page 62
+  39   1        // Enable ADC
+  40   1        AD0EN = 1;
+  41   1        SFRPAGE = SFRPAGE_SAVE;
+  42   1        adc0_to_mV = vref_mv * 2.44140625e-4; // 2.44140625e-004 == 1 / 4096;
+  43   1        ADC0_setDelayUs(10);
+  44   1      }
+  45          
+  46          // Input:           channel: channel select for ADC0 MUX
+  47          // Output:          l_s_value: ADC0 Data Word
+  48          // Overview:        This function will be executed to convert the voltage at the selected ADC0 channel inp
+             -ut and read
+  49          //                  ADC0 data value which is between 0x0000 and 0x0fff. (Refer to page 65)
+  50          short ADC0_readShort(char channel) {
+  51   1        char SFRPAGE_SAVE = SFRPAGE;
+C51 COMPILER V9.02   C8051_ADC                                                             05/20/2014 11:03:50 PAGE 2   
+
+  52   1        short value;
+  53   1        SFRPAGE = ADC0_PAGE; // Switch to ADC0 page
+  54   1        AMX0SL = channel; // Select the ADC0 MUX input
+  55   1        // An absolute minimum settling time of 1.5 micro sec (us) is required after any MUX or PGA selection.
+  56   1        Delay_us(adc0_delay); // page 77: The required settling time for a given settling accuracy (SA) may be a
+             -pproximated by Equation 6.1.
+  57   1        AD0INT = 0; // Step 1: Clear AD0INT
+  58   1        AD0BUSY = 1; // Step 2: Set AD0BUSY
+  59   1        while (!AD0INT) { // Step 3: Poll ADOINT for true
+  60   2        }
+  61   1        value = ADC0; // Store conversion results
+  62   1        AD0INT = 0; // Clear ADC conversion complete indicator
+  63   1        SFRPAGE = SFRPAGE_SAVE; // Restore the SFRPAGE
+  64   1        return value;
+  65   1      }
+  66          
+  67          // Input:           channel: the channel value for AIN0
+  68          //                  no_of_samples: number of samples to get for average value
+  69          // Output:          sum * adc0_to_mV / samples = average value of samples
+  70          // Overview:        This function will be executed to get the average value based on the number of samples
+             - given.
+  71          float ADC0_getAverage_mV(char channel, char samples) {
+  72   1        char count;
+  73   1        long sum = 0;
+  74   1        for (count = 0; count < samples; ++count)
+  75   1          sum += ADC0_readShort(channel);
+  76   1        return sum * adc0_to_mV / samples; // conversion is the same for all ADC0; refer to page 65
+  77   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    493    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     24    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

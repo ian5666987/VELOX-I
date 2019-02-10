@@ -1,0 +1,169 @@
+C51 COMPILER V9.02   COMM_IMC                                                              05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE COMM_IMC
+OBJECT MODULE PLACED IN comm_imc.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE comm_imc.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <stdio.h>
+   4          #include <string.h>
+   5          
+   6          #include "C8051_SMBus.h"
+   7          
+   8          #include "comm_generic.h"
+   9          #include "comm_internal.h"
+  10          #include "comm_imc.h"
+  11          
+  12          #define IMC_ADDRESS 0xA0
+  13          
+  14          // manual 5.2 page 18:
+  15          
+  16          #define IMC_RESET     0xAA // ISIS IMC reset
+  17          void Comm_rxReset() {
+  18   1        Comm_sendChar(IMC_RESET, IMC_ADDRESS);
+  19   1      }
+  20          
+  21          // manual 5.2 page 19:
+  22          
+  23          #define IMC_RX_FRAME_NUMEL    0x21   // ISIS IMC get no of Frame in receive buffer
+  24          void Comm_rxQueueSizePut() {
+  25   1        // 6.1.2.2 get number of frames in rx buffer
+  26   1        Comm_sendChar(IMC_RX_FRAME_NUMEL, IMC_ADDRESS);
+  27   1      }
+  28          
+  29          char Comm_rxQueueSizeGet(char* numel) {
+  30   1        short length;
+  31   1      #define IMC_RX_FRAMES_REPLY   1
+  32   1        Comm_getChars(IMC_ADDRESS, IMC_RX_FRAMES_REPLY);
+  33   1        if (SMBus_isRxComplete(&length))
+  34   1          if (length == IMC_RX_FRAMES_REPLY) {
+  35   2            *numel = comm_rxbuffer[0];
+  36   2            return 1;
+  37   2          }
+  38   1        *numel = 0;
+  39   1        ++comm_failCount;
+  40   1        return 0;
+  41   1      }
+  42          
+  43          // manual 5.2 page 20:
+  44          
+  45          #define IMC_RX_FRAME_GET    0x22 // ISIS IMC get frame from receive buffer
+  46          void Comm_rxFramePut() {
+  47   1        Comm_sendChar(IMC_RX_FRAME_GET, IMC_ADDRESS);
+  48   1      }
+  49          
+  50          char Comm_rxFrameGet(void* buffer, char* numel) {
+  51   1      #define COMM_RX_FRAME_REPLY     17
+  52   1      #define COMM_RX_FRAME_CONTENT   16
+  53   1      #if COMM_RX_FRAME_CONTENT + 1 != COMM_RX_FRAME_REPLY
+              #error "out of sync: rx frame get"
+              #endif
+C51 COMPILER V9.02   COMM_IMC                                                              05/20/2014 11:03:51 PAGE 2   
+
+  56   1        short length;
+  57   1        Comm_getChars(IMC_ADDRESS, COMM_RX_FRAME_REPLY);
+  58   1        if (SMBus_isRxComplete(&length))
+  59   1          if (length == COMM_RX_FRAME_REPLY) {
+  60   2            *numel = comm_rxbuffer[0];
+  61   2            if (0 < *numel && *numel <= COMM_RX_FRAME_CONTENT) { // velox-i uplinks are typically 7-16 bytes lon
+             -g
+  62   3              memcpy(buffer, comm_rxbuffer + 1, COMM_RX_FRAME_CONTENT); // pad with zeros
+  63   3              return 1;
+  64   3            }
+  65   2          }
+  66   1        ++comm_failCount;
+  67   1        return 0;
+  68   1      }
+  69          
+  70          // manual 5.2 page 21
+  71          
+  72          #define IMC_RX_FRAME_DROP    0x24 // ISIS IMC remove frame from receive buffer
+  73          void Comm_rxFrameDrop() {
+  74   1        Comm_sendChar(IMC_RX_FRAME_DROP, IMC_ADDRESS);
+  75   1      }
+  76          
+  77          // manual 5.2 (see comm_deprec)
+  78          // page 22: rx doppler offset
+  79          // page 23: rx signal strength
+  80          // page 24: tx reflected power
+  81          // page 25: tx forward power
+  82          // page 26: tx current consumption
+  83          // page 27: rx current consumption
+  84          // page 28: power amplifier temperature
+  85          // page 29: power bus voltage
+  86          
+  87          // manual 5.2 page 30, 31:
+  88          
+  89          #define IMC_GET_ALL_TELEMETRY    0x1A   // ISIS IMC measure all data
+  90          void Comm_allTelemetryPut() {
+  91   1        // 6.1.2.13 measure all telemetry channels
+  92   1        Comm_sendChar(IMC_GET_ALL_TELEMETRY, IMC_ADDRESS);
+  93   1      }
+  94          
+  95          char Comm_allTelemetryGet() {
+  96   1        short length;
+  97   1        char count;
+  98   1        char temp;
+  99   1        char* bytes;
+ 100   1      #define COMM_ALL_TM_REPLY   16
+ 101   1        Comm_getChars(IMC_ADDRESS, COMM_ALL_TM_REPLY);
+ 102   1        if (SMBus_isRxComplete(&length))
+ 103   1          if (length == COMM_ALL_TM_REPLY) {
+ 104   2            bytes = (char*) &g_imc.doppler_offset;
+ 105   2            memcpy(bytes, comm_rxbuffer, COMM_ALL_TM_REPLY);
+ 106   2            for (count = 0; count < COMM_ALL_TM_REPLY; count += 2) {
+ 107   3              temp = bytes[count];
+ 108   3              bytes[count] = bytes[count + 1];
+ 109   3              bytes[count + 1] = temp;
+ 110   3            }
+ 111   2            return 1;
+ 112   2          }
+ 113   1        ++comm_failCount;
+ 114   1        return 0;
+ 115   1      }
+ 116          
+C51 COMPILER V9.02   COMM_IMC                                                              05/20/2014 11:03:51 PAGE 3   
+
+ 117          // manual 5.2 (see comm_deprec)
+ 118          // page 32: power bus voltage
+ 119          // page 32: rx current consumption
+ 120          // page 32: tx current consumption
+ 121          
+ 122          // manual 5.2 page 33:
+ 123          
+ 124          #define IMC_UPTIME    0x40   // ISIS IMC report receiver uptime
+ 125          void Comm_rxUptimePut() {
+ 126   1        // 6.1.2.15 get rx uptime
+ 127   1        Comm_sendChar(IMC_UPTIME, IMC_ADDRESS);
+ 128   1      }
+ 129          
+ 130          char Comm_rxUptimeGet() {
+ 131   1        short length;
+ 132   1      #define COMM_RX_UPTIME_REPLY 3
+ 133   1        Comm_getChars(IMC_ADDRESS, COMM_RX_UPTIME_REPLY);
+ 134   1        if (SMBus_isRxComplete(&length))
+ 135   1          if (length == COMM_RX_UPTIME_REPLY) {
+ 136   2            memcpy(&g_imc.rx_uptime_minutes, comm_rxbuffer, COMM_RX_UPTIME_REPLY);
+ 137   2            return 1;
+ 138   2          }
+ 139   1        ++comm_failCount;
+ 140   1        return 0;
+ 141   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    850    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     22    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,177 @@
+C51 COMPILER V9.02   OBDH_MAIN                                                             05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_MAIN
+OBJECT MODULE PLACED IN obdh_main.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_main.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          //To test ADCS and OBDH combination to do some issues:
+   4          // 1) Detumbling when it first ejected.
+   5          // 2) Sun pointing all the time and when the satellite is in eclipse.
+   6          // 3) Nadir pointing with high accuracy as it wants to deploy the P-SAT.
+   7          // 4) Pointing to the wanted direction when it wants to capture a picture with the camera.
+   8          //
+   9          //To program the ADCS detumbling when it is in the LEOP. What kind of procedure that you are going to appl
+             -y?
+  10          // 1) ADCS will be on -> enter Sun-Pointing Mode
+  11          // 2) Commanded by OBDH to enter detumbling mode for maximum of 2 orbits.
+  12          // 3) When the timeout or stable conditions reached, the ADCS will stop detumbling
+  13          //
+  14          //Sun pointing all the time, but ADCS must inform OBDH when it is in the Eclipse, for only ADCS knows it
+  15          // 1) to receive Eclipse information from ADCS (this should be included in the housekeeping).
+  16          //
+  17          //To retrieve information from ADCS of its position error (this should be included in the housekeeping)
+  18          //
+  19          //To point the satellite into the wanted direction and then combine it with Payload activation.
+  20          // 1) If the power is considered "sufficient" to perform the action
+  21          // 2) Then turn ON ADCS and let ADCS to perform certain orientation. I do not know how long does this will
+             - take. But I think it will be till 2 minutes after the appointed time
+  22          // 3) Then turn ON the camera on the appointed time (or before) and let it ON for a while
+  23          // 4) Then the camera will capture the image for two minutes, ADCS will be back to the Sun-pointing mode
+  24          // 5) Collect the camera data in a rotating slot no.
+  25          
+  26          #include "obdh_main.h"
+  27          
+  28          char sfrStack[8];
+  29          
+  30          char UART0_rx_buffer[CQT_UART_RX_SIZE]; // cqt
+  31          char UART0_tx_buffer[32];
+  32          
+  33          #if 255 <= CQT_UART_RX_SIZE
+              #error "cqt uart rx size must be strictly less than 255"
+              #endif
+  36          
+  37          char UART1_rx_buffer[128]; // uart1 is for debug
+  38          char UART1_tx_buffer[480];
+  39          
+  40          extern State mainState;
+  41          
+  42          void main() {
+  43   1        // at gear0/1 no uart1 is possible since the smbus is very busy (interrupt priorities)
+  44   1        OscGear osc_gear = oscillator_gear4; // at gear4 the operation of cqt only produces around 2 write, and 
+             -around 2 read sd card errors
+  45   1        Watchdog_disable();
+  46   1        Oscillator_init(osc_gear);
+  47   1        SFR_init(sfrStack, sizeof sfrStack); // Port_init() uses sfr_stack
+  48   1        Port_init();
+  49   1        Meta_init(); // required for chip_meta.systemFreq
+  50   1      
+  51   1        // --- c8051
+  52   1        SPI0_init(chip_meta.systemFreq, F_SCK_MAX, SPI0_CONFIG, SPI0_TIMEOUT);
+C51 COMPILER V9.02   OBDH_MAIN                                                             05/20/2014 11:03:51 PAGE 2   
+
+  53   1        Timer0_init(chip_meta.systemFreq, System_getCKCON(osc_gear)); // not used, but initialized to prevent fl
+             -oating state
+  54   1        UART1Timer1_init(chip_meta.systemFreq, System_getT1Prescaler(osc_gear), BAUDRATE_1); // used for UART1 b
+             -audrate generator
+  55   1        Timer2_init(chip_meta.systemFreq); // used for watchdog and various delays
+  56   1        UART0Timer4_init(chip_meta.systemFreq, BAUDRATE_0); // used for UART0 baudrate generator
+  57   1        UART0_open(UART0_rx_buffer, sizeof UART0_rx_buffer, UART0_tx_buffer, sizeof UART0_tx_buffer, 0x0f);
+  58   1        UART1_open(UART1_rx_buffer, sizeof UART1_rx_buffer, UART1_tx_buffer, sizeof UART1_tx_buffer);
+  59   1        ADC0_init(chip_meta.systemFreq, VREF_MV);
+  60   1        SMBus_setRxBuffer(i2c_rxbuffer, sizeof i2c_rxbuffer);
+  61   1        SMBus_init(OBDH_ADDRESS, chip_meta.systemFreq);
+  62   1        SMBusTimer3_init(chip_meta.systemFreq); // Initialize Timer 3: used for I2C SCL timeout (SMBus)
+  63   1      
+  64   1        // --- velox
+  65   1        Checksum_init(CHECKSUM_PLY);
+  66   1        Watchdog_advancedInit(IE_TIMER2_MASK, WATCHDOG_TIMEOUT_MS); // 10s watchdog timeout, one main loop cycle
+             - should take less than 10s (typically < 30 ms)
+  67   1        EA = 1; // after watchdog init, but before have to enable interrupts before the first putchar!
+  68   1      
+  69   1        Auth_init();
+  70   1        Debug_init();
+  71   1        Timekeeper_init();
+  72   1        Comm_init(i2c_txbuffer, i2c_rxbuffer);
+  73   1      
+  74   1        Rtc_init(i2c_txbuffer, i2c_rxbuffer);
+  75   1        Uptime_init(TAI_TIME_UNAVAILABLE, 0, 300); // 300 sec as storing interval
+  76   1        Schedule_init(); // initialize the schedule
+  77   1        Cqt_init();
+  78   1      
+  79   1        StateUtil_init(i2c_txbuffer, i2c_rxbuffer, sizeof i2c_rxbuffer);
+  80   1        State_initStatetask(&g_statetask_pwrsHk, 503); // interaction with PWRS
+  81   1        State_initStatetask(&g_statetask_adcsHk, 3907); // interaction with ADCS (intentionally much less freque
+             -nt than with PWRS)
+  82   1        State_initStatetask(&g_statetask_trxuvHk, 473);
+  83   1        State_initStatetask(&g_statetask_xdatSegGet, 83);
+  84   1        State_initStatetask(&g_statetask_wireUp, 47); // fast for mccif uplink via Uart, state allows user to co
+             -ntrol obdh, state is passive unless specifically commanded
+  85   1        State_initStatetask(&g_statetask_radioUp, 827);
+  86   1        State_initStatetask(&g_statetask_cmdHandler, 137);
+  87   1        State_initStatetask(&g_statetask_scheduler, 521); // execute what is in the schedule
+  88   1        State_initStatetask(&g_statetask_downlink, STATE_DONWLINK_DELAY_MIN); // downlink state is passive unles
+             -s specifically commanded
+  89   1        State_initStatetask(&g_statetask_ferryCam, 67); // only active when sbc and csfb channels are powered up
+             -, see Recon_ChannelStatusUpdated_Event()
+  90   1        State_initStatetask(&g_statetask_ferryXBee, 373);
+  91   1        State_initStatetask(&g_statetask_ferryGps, 443);
+  92   1        State_initStatetask(&g_statetask_rtcSync, 60001); // 1009ms is for testing. 1 minute is more than suffic
+             -ient for RTC synchronization (handled in State_rtcSync)
+  93   1        State_initStatetask(&g_statetask_powerCqt, 631);
+  94   1      
+  95   1        g_statetask_powerCqt.task.mode = timertask_disabled; // auto activated by cqt_handler()
+  96   1      
+  97   1        Constant_init();
+  98   1        Trxuv_init();
+  99   1      
+ 100   1        SD_initConfig();
+ 101   1        SDred_init(Mccif_isValidContent, readbackcopy);
+ 102   1      
+ 103   1        State_starter(&mainState, 800); // any statetask is not allowed to run for more than 0.8 sec
+ 104   1      
+ 105   1        //Hash_readManifest(); //At least must return to the original state! how??
+ 106   1      
+C51 COMPILER V9.02   OBDH_MAIN                                                             05/20/2014 11:03:51 PAGE 3   
+
+ 107   1        Watchdog_lockout();
+ 108   1        while (1) {
+ 109   2      
+ 110   2          if (Clock_hasAdvanced()) { // true when ms count is different at this point
+ 111   3      
+ 112   3            if (Seconds_haveAdvanced()) { // true once per second
+ 113   4              Grace_eachSecond();
+ 114   4              Timekeeper_handler();
+ 115   4            }
+ 116   3      
+ 117   3            Meta_handler(); // gives states the latest chip info
+ 118   3      
+ 119   3            State_turing(&mainState, &g_statetask_pwrsHk, State_pwrsHk);
+ 120   3            State_turing(&mainState, &g_statetask_adcsHk, State_adcsHk);
+ 121   3            State_turing(&mainState, &g_statetask_trxuvHk, State_trxuvHk);
+ 122   3            State_turing(&mainState, &g_statetask_xdatSegGet, State_xdatSegGet);
+ 123   3            State_turing(&mainState, &g_statetask_wireUp, State_wireUp);
+ 124   3            State_turing(&mainState, &g_statetask_radioUp, State_radioUp);
+ 125   3            State_turing(&mainState, &g_statetask_cmdHandler, State_cmdHandler);
+ 126   3            State_turing(&mainState, &g_statetask_scheduler, State_scheduler);
+ 127   3            State_turing(&mainState, &g_statetask_downlink, State_downlink);
+ 128   3            State_turing(&mainState, &g_statetask_ferryCam, State_ferryCct);
+ 129   3            State_turing(&mainState, &g_statetask_ferryXBee, State_ferryXBee);
+ 130   3            State_turing(&mainState, &g_statetask_ferryGps, State_ferryGps);
+ 131   3            State_turing(&mainState, &g_statetask_rtcSync, State_rtcSync);
+ 132   3            State_turing(&mainState, &g_statetask_powerCqt, State_powerCqt);
+ 133   3      
+ 134   3            Debug_loopDownlink();
+ 135   3      
+ 136   3            Cqt_handler();
+ 137   3          } // end of ms entry
+ 138   2        }
+ 139   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1669    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =    899    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

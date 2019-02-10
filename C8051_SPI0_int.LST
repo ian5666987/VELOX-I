@@ -1,0 +1,88 @@
+C51 COMPILER V9.02   C8051_SPI0_INT                                                        05/20/2014 11:03:50 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_SPI0_INT
+OBJECT MODULE PLACED IN C8051_SPI0_int.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_SPI0_int.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #define  interrupt(x)     interrupt x
+   4          
+   5          #include <c8051F120.h>
+   6          
+   7          #include "C8051_delay.h"
+   8          #include "C8051_SPI0_shared.h"
+   9          
+  10          volatile char* spi0_txMessage;
+  11          volatile char* spi0_rxMessage;
+  12          
+  13          volatile short spi0_txPosition;
+  14          volatile short spi0_rxPosition;
+  15          volatile short spi0_available; // disable interrupts when reading value in main code
+  16          volatile char spi0_rxIncrement;
+  17          
+  18          extern short SPI0_failures;
+  19          
+  20          // EA is required to be on prior to calling this function
+  21          char SPI0int_process(char mode, void* buffer, short length) {
+  22   1        char SFRPAGE_SAVE;
+  23   1        char dummy;
+  24   1        if (0 < length) { // negative or zero length => nothing is sent; length has to be strictly positive
+  25   2          spi0_txMessage = (char*) buffer;
+  26   2          spi0_txPosition = 0; // position of next write
+  27   2          spi0_rxMessage = mode ? (char*) buffer : &dummy;
+  28   2          spi0_rxPosition = 0; // position of next read
+  29   2          spi0_rxIncrement = mode;
+  30   2          SFRPAGE_SAVE = SFRPAGE;
+  31   2          SFRPAGE = SPI0_PAGE;
+  32   2          spi0_available = length; // strictly positive
+  33   2          EIE1 |= ESPI0_MASK; // enable spi interrupt status
+  34   2          SPI0DAT = spi0_txMessage[spi0_txPosition]; // send first in main code
+  35   2          while (1) { // FIXME need a timeout criteria based on _facts_ ! note: any exit criteria needs to disab
+             -le spi0 interrupt
+  36   3            Delay_us(5);
+  37   3            EIE1 &= ~ESPI0_MASK; // Disable spi0 interrupts
+  38   3            if (spi0_available == 0)
+  39   3              break; // wait until interrupt has rx length bytes
+  40   3            EIE1 |= ESPI0_MASK; // re-enable spi interrupt status
+  41   3          }
+  42   2          SFRPAGE = SFRPAGE_SAVE;
+  43   2        }
+  44   1        return 1;
+  45   1      }
+  46          
+  47          SPI0_ISR() interrupt (6) { // page 155
+  48   1        if (SPIF) { // tx complete
+  49   2          SPIF = 0;
+  50   2          spi0_rxMessage[spi0_rxPosition] = SPI0DAT; // recv
+  51   2          spi0_rxPosition += spi0_rxIncrement;
+  52   2          --spi0_available;
+  53   2          if (spi0_available) {
+  54   3            ++spi0_txPosition; // move pointer to next byte
+C51 COMPILER V9.02   C8051_SPI0_INT                                                        05/20/2014 11:03:50 PAGE 2   
+
+  55   3            SPI0DAT = spi0_txMessage[spi0_txPosition]; // write
+  56   3          }
+  57   2        }
+  58   1        if (SPI0CN & 0x70) {
+  59   2          ++SPI0_failures;
+  60   2          SPI0CN &= 0x8f; // clear remaining flags
+  61   2        }
+  62   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    413    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     21    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

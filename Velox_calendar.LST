@@ -1,0 +1,187 @@
+C51 COMPILER V9.02   VELOX_CALENDAR                                                        05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_CALENDAR
+OBJECT MODULE PLACED IN Velox_calendar.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_calendar.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          //#include <c8051f120.h>
+   4          #include <string.h>
+   5          
+   6          #include "Velox_calendar.h"
+   7          
+   8          #define LEAP_SECONDS_UNTIL_PRESENT          35
+   9          #define SECONDS_PER_DAY                     86400L
+  10          #define SECONDS_PER_HOUR                    3600
+  11          #define SECONDS_PER_MINUTE                  60
+  12          #define MINUTES_PER_HOUR                    60
+  13          #define HOURS_PER_DAY                       24
+  14          // ---
+  15          
+  16          unsigned char code calendar_limit_lo[SIZEOF_CALENDAR] = { 7, 0xA5, 12, 31, 23, 59, 25 }; // 1957 = 0x7A5 /
+             -/ 1957-12-31/23:59:25 == 0
+  17          unsigned char code calendar_limit_hi[SIZEOF_CALENDAR] = { 8, 0x2E, 02, 06, 06, 27, 40 }; // 2094 = 0x82E /
+             -/ 2094-02-06/06:27:40 == -1 == 0xffffffff
+  18          
+  19          // private
+  20          void Calendar_initToTai0(Calendar* calendar) {
+  21   1        memcpy(calendar, calendar_limit_lo, SIZEOF_CALENDAR);
+  22   1      }
+  23          
+  24          // see Z:\datasheets\calibration\leapyear.m for test results
+  25          // year 1700, 1800, & 1900 are NOT leap years but year 1600 & 2000 are leap years, leap century occurred e
+             -very 400 years
+  26          // private
+  27          char Calendar_isYearWith365Days(unsigned short year) { // ok
+  28   1        return year % 4 || (!(year % 100) && (year % 400)); // common year is either not divisible 4 or divisibl
+             -e by 100 but not divisible by 400
+  29   1      }
+  30          
+  31          unsigned char Calendar_daysOfMonth(unsigned short year, unsigned char month) { // ok
+  32   1        if (month == month_february) // For month: Feb
+  33   1          return Calendar_isYearWith365Days(year) ? 28 : 29;
+  34   1        // Thirty days hath September, April, June, and November.
+  35   1        // All the rest have thirty-one, Excepting February alone, ...
+  36   1        return month == month_april || month == month_june || month == month_september || month == month_novembe
+             -r ? 30 : 31;
+  37   1      }
+  38          
+  39          // Calculate number of days between:
+  40          // a date and 1-JAN-1958, invalid to calculate days below the specified date
+  41          // private
+  42          unsigned short Calendar_daysSinceTaiUntil(unsigned short year, unsigned char month, unsigned char day) {
+  43   1        unsigned short days;
+  44   1        unsigned short yearCount;
+  45   1        unsigned char monthCount;
+  46   1        unsigned short yearStart;
+  47   1        if (2013 <= year) {
+  48   2          yearStart = 2013;
+  49   2          days = 20089; // DAYS_FROM_TAI_TO_1_JAN_2013 == 20089
+  50   2        } else {
+C51 COMPILER V9.02   VELOX_CALENDAR                                                        05/20/2014 11:03:53 PAGE 2   
+
+  51   2          yearStart = 1958;
+  52   2          days = 0;
+  53   2        }
+  54   1        for (yearCount = yearStart; yearCount < year; ++yearCount)
+  55   1          days += Calendar_isYearWith365Days(yearCount) ? 365 : 366;
+  56   1        for (monthCount = month_january; monthCount < month; ++monthCount)
+  57   1          days += Calendar_daysOfMonth(year, monthCount);
+  58   1        days += day - 1;
+  59   1        return days;
+  60   1      }
+  61          
+  62          void Calendar_incrementDay(Calendar* calendar) {
+  63   1        ++calendar->day; //goto next day
+  64   1        if (Calendar_daysOfMonth(calendar->year, calendar->month) < calendar->day) {
+  65   2          calendar->day = 1; // goto next month
+  66   2          ++calendar->month;
+  67   2          if (month_december < calendar->month) {
+  68   3            calendar->month = month_january; // goto next year
+  69   3            ++calendar->year;
+  70   3          }
+  71   2        }
+  72   1      }
+  73          
+  74          //06:23:00 6700 -> 18:23:54
+  75          // warning: seconds must not exceed SECONDS_PER_DAY
+  76          void Calendar_incrementSeconds(Calendar* calendar, unsigned long seconds) { // ok
+  77   1        unsigned char hours;
+  78   1        unsigned char minutes;
+  79   1        hours = seconds / SECONDS_PER_HOUR;
+  80   1        seconds %= SECONDS_PER_HOUR;
+  81   1        minutes = seconds / SECONDS_PER_MINUTE;
+  82   1        seconds %= SECONDS_PER_MINUTE;
+  83   1        calendar->hour += hours;
+  84   1        calendar->minute += minutes;
+  85   1        calendar->second += seconds;
+  86   1        if (SECONDS_PER_MINUTE <= calendar->second) {
+  87   2          calendar->second -= SECONDS_PER_MINUTE;
+  88   2          ++calendar->minute;
+  89   2        }
+  90   1        if (MINUTES_PER_HOUR <= calendar->minute) {
+  91   2          calendar->minute -= MINUTES_PER_HOUR;
+  92   2          ++calendar->hour;
+  93   2        }
+  94   1        if (HOURS_PER_DAY <= calendar->hour) {
+  95   2          calendar->hour -= HOURS_PER_DAY;
+  96   2          Calendar_incrementDay(calendar);
+  97   2        }
+  98   1      }
+  99          
+ 100          void Calendar_setFromDays(Calendar* calendar, unsigned short days) { // ok
+ 101   1        unsigned short limit;
+ 102   1        do { // calculate year
+ 103   2          limit = Calendar_isYearWith365Days(calendar->year) ? 365 : 366;
+ 104   2          if (limit <= days) {
+ 105   3            days -= limit;
+ 106   3            ++calendar->year;
+ 107   3          } else
+ 108   2            break;
+ 109   2        } while (1);
+ 110   1        do { // calculate month
+ 111   2          limit = Calendar_daysOfMonth(calendar->year, calendar->month);
+ 112   2          if (limit <= days) {
+C51 COMPILER V9.02   VELOX_CALENDAR                                                        05/20/2014 11:03:53 PAGE 3   
+
+ 113   3            days -= limit;
+ 114   3            ++calendar->month;
+ 115   3          } else
+ 116   2            break;
+ 117   2        } while (1);
+ 118   1        calendar->day += days; // calculate days
+ 119   1      }
+ 120          
+ 121          // update dates from 31-DEC-1957 23:59:25
+ 122          void Calendar_fromTai(Calendar* calendar, unsigned long taitime) {
+ 123   1        Calendar_initToTai0(calendar);
+ 124   1        if (LEAP_SECONDS_UNTIL_PRESENT <= taitime) { // if tai_time is greater than the no of seconds till end o
+             -f the day, go to the next day
+ 125   2          taitime -= LEAP_SECONDS_UNTIL_PRESENT;
+ 126   2          Calendar_incrementDay(calendar);
+ 127   2          calendar->hour = 0;
+ 128   2          calendar->minute = 0;
+ 129   2          calendar->second = 0;
+ 130   2          Calendar_setFromDays(calendar, taitime / SECONDS_PER_DAY); // update day month and year
+ 131   2          taitime %= SECONDS_PER_DAY;
+ 132   2        }
+ 133   1        Calendar_incrementSeconds(calendar, taitime); // update the remaining seconds left
+ 134   1      }
+ 135          
+ 136          //Get no of second from 31-DEC-1957 23:59:25 by just inputing current date info (input range: 31-Dec-1957 
+             -23:59:25 to )
+ 137          unsigned long Calendar_toTai(Calendar* calendar) {
+ 138   1        unsigned long taitime;
+ 139   1        if (memcmp(calendar, calendar_limit_lo, SIZEOF_CALENDAR) < 0) // below lower limit
+ 140   1          return 0;
+ 141   1        if (memcmp(calendar_limit_hi, calendar, SIZEOF_CALENDAR) < 0) // above upper limit
+ 142   1          return -1;
+ 143   1      
+ 144   1        if (calendar->year == 1957)
+ 145   1          return calendar->second - (60 - LEAP_SECONDS_UNTIL_PRESENT);
+ 146   1      
+ 147   1        taitime = LEAP_SECONDS_UNTIL_PRESENT;
+ 148   1        taitime += Calendar_daysSinceTaiUntil(calendar->year, calendar->month, calendar->day) * SECONDS_PER_DAY;
+ 149   1        taitime += calendar->hour * (unsigned long) SECONDS_PER_HOUR;
+ 150   1        taitime += calendar->minute * SECONDS_PER_MINUTE;
+ 151   1        taitime += calendar->second;
+ 152   1        return taitime;
+ 153   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   2337    ----
+   CONSTANT SIZE    =     14    ----
+   XDATA SIZE       =     52    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

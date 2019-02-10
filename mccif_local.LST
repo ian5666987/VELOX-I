@@ -1,0 +1,84 @@
+C51 COMPILER V9.02   MCCIF_LOCAL                                                           05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE MCCIF_LOCAL
+OBJECT MODULE PLACED IN mccif_local.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE mccif_local.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          #include <string.h>
+   5          
+   6          #include "Velox_checksum.h"
+   7          #include "Velox_uart.h"
+   8          #include "Velox_macros.h"
+   9          
+  10          #include "mccif_xdata.h"
+  11          #include "mccif_local.h"
+  12          
+  13          char mccif_port = 0;
+  14          char mccif_localSystem = 0; // localhost
+  15          
+  16          /** set uart port and subsystem id */
+  17          void Mccif_localInit(char port, char system) {
+  18   1        mccif_port = port;
+  19   1        mccif_localSystem = system;
+  20   1      }
+  21          
+  22          /** transmit memory image to mcc */
+  23          void Mccif_localSend(short offset, short length, void* buffer) {
+  24   1        short total; // header + length + checksum
+  25   1        total = Mccif_formatContent(offset, length, buffer);
+  26   1        Uart_putChars(mccif_port, buffer, total);
+  27   1      }
+  28          
+  29          /** checks uart port for commands and if matching passes them to Mccif_localHandle_Override */
+  30          char Mccif_localPoll() {
+  31   1        char message[MCCIF_DATA_OFFSET + MCCIF_COMMAND_MAXLEN + 2]; // name required for macro
+  32   1        short length;
+  33   1        char updated = 0;
+  34   1        char success; // name required for macro
+  35   1        char xdata* ptr = 0;
+  36   1        while (Uart_pollChars(mccif_port, message, MCCIF_DATA_OFFSET)) { // poll for header: [XDAT 1|2 system of
+             -fset length]
+  37   2          success = memcmp(message, mccif_xdatMarker, sizeof mccif_xdatMarker) == 0;
+  38   2          success &= message[4] == MCCIF_ID_SET || message[4] == MCCIF_ID_REQUEST; // preliminary condition
+  39   2          // offset is ignored
+  40   2          length = extractFromBuffer(unsigned char, message + MCCIF_LENGTH_OFFSET);
+  41   2          success &= 0 < length && length <= MCCIF_COMMAND_MAXLEN;
+  42   2          if (success) {
+  43   3            if (Uart_pollChars(mccif_port, message, MCCIF_DATA_OFFSET + length + 2)) {
+  44   4              success &= Checksum_isValid(message, MCCIF_DATA_OFFSET + length + 2);
+  45   4              Uart_advance(mccif_port, MCCIF_DATA_OFFSET + length + 2);
+  46   4              if (success) {
+  47   5                updated |= Mccif_localHandle_Override(message);
+  48   5                break; // TODO jan added this break relatively late into development -> still needs testing on a
+             -ll subsystems
+  49   5              }
+  50   4            } else // insufficient characters in buffer
+  51   3              break;
+  52   3          }
+  53   2          if (!success) // message corrupt
+C51 COMPILER V9.02   MCCIF_LOCAL                                                           05/20/2014 11:03:51 PAGE 2   
+
+  54   2            Uart_advance(mccif_port, 1);
+  55   2        }
+  56   1        return updated;
+  57   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    534    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     40    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

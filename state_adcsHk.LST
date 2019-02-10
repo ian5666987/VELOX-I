@@ -1,0 +1,98 @@
+C51 COMPILER V9.02   STATE_ADCSHK                                                          05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_ADCSHK
+OBJECT MODULE PLACED IN state_adcsHk.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_adcsHk.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "Velox_beacon.h"
+   6          #include "Velox_uptime.h"
+   7          
+   8          #include "shared_general.h"
+   9          #include "shared_obdh.h"
+  10          #include "shared_adcs.h"
+  11          
+  12          #include "obdh_constant.h"
+  13          #include "obdh_globalvariables.h"
+  14          #include "obdh_recon.h"
+  15          
+  16          #include "state_util.h"
+  17          
+  18          #define OBDH_ADCS_BEACON_OFFSET      XDATA_OBDH_BEACON_LENGTH + XDATA_PWRS_BEACON_LENGTH
+  19          
+  20          // fails-fast if adcs is powered down
+  21          char State_adcsHk(char* subtask) {
+  22   1        char release = 0; // default return choice: do not release state, unless specific set (see release = 1; 
+             -instruction below)
+  23   1        short length;
+  24   1        unsigned long adcs_taitime;
+  25   1        long absdiff;
+  26   1        char update;
+  27   1        switch (*subtask) {
+  28   2        case 0:
+  29   2          Beacon_setUnassigned(&g_c_beacon[OBDH_ADCS_BEACON_OFFSET], XDATA_ADCS_BEACON_LENGTH);
+  30   2          if (Subsystem_isAvailable(ADCS_ADDRESS)) {
+  31   3            StateUtil_pokeRequestXdata(ADCS_ADDRESS, XDATA_ADCS_BEACON_OFFSET, XDATA_ADCS_BEACON_LENGTH);
+  32   3            ++*subtask;
+  33   3          } else
+  34   2            release = 1;
+  35   2          break;
+  36   2        case 1:
+  37   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  38   3            StateUtil_copyReply(&g_c_beacon[OBDH_ADCS_BEACON_OFFSET], XDATA_ADCS_BEACON_LENGTH);
+  39   3            // ---
+  40   3            if (Uptime_isTaiTimeValid()) { // only if obdh has time, we have any hope to update time on adcs
+  41   4              StateUtil_pokeRequestXdata(ADCS_ADDRESS, XDATA_ADCS_TAITIME_OFFSET, sizeof uptime.tai_time);
+  42   4              ++*subtask;
+  43   4            } else
+  44   3              release = 1;
+  45   3          }
+  46   2          break;
+  47   2        case 2:
+  48   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  49   3            StateUtil_copyReply(&adcs_taitime, sizeof adcs_taitime);
+  50   3            update = adcs_taitime == TAI_TIME_UNAVAILABLE;
+  51   3            if (!update) {
+  52   4              absdiff = uptime.tai_time - adcs_taitime;
+  53   4              if (absdiff < 0L) // compute absolute value of time deviation
+  54   4                absdiff = -absdiff;
+C51 COMPILER V9.02   STATE_ADCSHK                                                          05/20/2014 11:03:52 PAGE 2   
+
+  55   4              update = TAITIME_DEVIATION_MIN < absdiff && absdiff < TAITIME_DEVIATION_MAX;
+  56   4            }
+  57   3            // ---
+  58   3            if (update) {
+  59   4              StateUtil_pokeSetXdata(ADCS_ADDRESS, XDATA_ADCS_TAITIME_OFFSET, sizeof uptime.tai_time, &uptime.ta
+             -i_time); // write obdh taitime to adcs
+  60   4              ++*subtask;
+  61   4            } else
+  62   3              release = 1;
+  63   3          }
+  64   2          break;
+  65   2        case 3:
+  66   2          if (StateUtil_peek(&length, &release) == reply_success) // time has been updated on adcs
+  67   2            release = 1;
+  68   2          break;
+  69   2        }
+  70   1        return release;
+  71   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    673    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     15    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

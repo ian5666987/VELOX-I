@@ -1,0 +1,43 @@
+C51 COMPILER V9.02   VELOX_DELAY                                                           05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_DELAY
+OBJECT MODULE PLACED IN Velox_delay.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_delay.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <intrins.h>
+   4          
+   5          #include "C8051_delay.h"
+   6          
+   7          #include "Velox_delay.h"
+   8          #include "Velox_timertask.h"
+   9          
+  10          // delay is at least 'value' ms.
+  11          // in fact, delay is between 'value' ms and 'value+1' ms
+  12          // Delay_blockMs requires EA==1 to perform!
+  13          void Delay_blockMs(short value) {
+  14   1        struct struct_timertask delay_task;
+  15   1        Timertask_setExecuteOnce(&delay_task, value + 1); // +1 guarantees that the delay is at least 'value' ms
+  16   1        while (!Timertask_isReady(&delay_task)) {
+  17   2          Delay_us(10);
+  18   2          _nop_();
+  19   2        }
+  20   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     56    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      7    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

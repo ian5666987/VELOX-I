@@ -1,0 +1,287 @@
+C51 COMPILER V9.02   STATE_DOWNLINK                                                        05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_DOWNLINK
+OBJECT MODULE PLACED IN state_downlink.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_downlink.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          #include <string.h>
+   5          #include <stdio.h>
+   6          
+   7          #include "Velox_delay.h"
+   8          #include "Velox_macros.h"
+   9          #include "Velox_slowtask.h"
+  10          #include "Velox_state.h"
+  11          #include "Velox_uptime.h" //added to control beacon before the first hour pass
+  12          
+  13          #include "mccif_spy.h"
+  14          #include "mccif_xdata.h"
+  15          
+  16          #include "comm_generic.h"
+  17          #include "comm_itc.h"
+  18          #include "comm_itc_cw.h"
+  19          
+  20          #include "shared_general.h"
+  21          #include "shared_obdh.h"
+  22          
+  23          #include "obdh_constant.h"
+  24          #include "obdh_globalvariables.h"
+  25          #include "obdh_recon.h"
+  26          #include "obdh_trxuv.h"
+  27          
+  28          #include "hash_blob.h"
+  29          #include "hash_util.h"
+  30          
+  31          #include "state_downlink.h"
+  32          #include "state_util.h"
+  33          
+  34          // the time delay to send 235 bytes via Ax25 (with 330kHz effective I2C clock rate - obtained from observi
+             -ng the oscilloscope -
+  35          // and 12 I2C clock cycle from one byte to the next one) is around 235 x 12/330,000 = 8.55ms + 5ms to wait
+             - for ISIS reply = 13.55ms.
+  36          #define DOWNLINK_MAX_DURATION_MS   20  // in milli seconds
+  37          #if DOWNLINK_MAX_DURATION_MS < 14 // > 13.55ms is sufficient
+              #error "out of sync: DOWNLINK_MAX_DURATION_MS"
+              #endif
+  40          #define   DOWNLINK_DROP_HEADER        5  // the old protocol includes the 5-byte header XDAT 0x00, the new
+             - downlink format has these 5-bytes removed
+  41          #define   DOWNLINK_ISSUED_AX25_MASK   0x01
+  42          #define   DOWNLINK_ISSUED_CW_MASK     0x02
+  43          
+  44          #define   DOWNLINK_INACTIVE_TIME      7200 //beacon must be inactive during LEOP for this time span (in se
+             -conds). 20140520 - changed from 2700 to 7200 after VELOX-I meeting
+  45          // ---
+  46          
+  47          volatile char downlink_issued; // flag inside this file to indicate if any logic causes uplink
+  48          
+  49          // function is called when downlink is intended, if success
+  50          void private_downlink(void* buffer) {
+  51   1        short length;
+C51 COMPILER V9.02   STATE_DOWNLINK                                                        05/20/2014 11:03:52 PAGE 2   
+
+  52   1        length = Mccif_getFrameLength(buffer);
+  53   1        if (Trxuv_isAvailable()) // don't remove! //This may need to distinguish between local PC and real groun
+             -d station
+  54   1          Comm_txAx25Put(((char*) buffer) + DOWNLINK_DROP_HEADER, length - DOWNLINK_DROP_HEADER); // single inst
+             -ance of call to Comm_txAx25Put in code
+  55   1        // flag is set independent of comm hardware status:
+  56   1        // * during mission comm is always on
+  57   1        // * during development debug print should advance
+  58   1        downlink_issued |= DOWNLINK_ISSUED_AX25_MASK;
+  59   1        Recon_debugPrint(buffer, length);
+  60   1      }
+  61          
+  62          void private_advanceGetFrameIndex() {
+  63   1        ++g_getFrame.frameIndex.index;
+  64   1        g_getFrame.frameIndex.index %= XDATSEG_NUMEL;
+  65   1        if (0 == g_getFrame.frameIndex.index) { // into next page ?
+  66   2          g_getFrame.frameIndex.page += g_getFrame.stride;
+  67   2          g_getFrame.frameIndex.page %= g_hashFrame.pages; // here we go again
+  68   2          --g_getFrame.numPages;
+  69   2        }
+  70   1      }
+  71          
+  72          void private_downlinkNextGetFrame() { //This function seems to be a bit unstable...
+  73   1        char index;
+  74   1        char status;
+  75   1        for (index = 0; index < XDATSEG_NUMEL; ++index) {
+  76   2          if ((g_getFrame.mask & (1L << g_getFrame.frameIndex.index)) != 0L) {
+  77   3            status = Hash_getFrame(&g_getFrame.frameIndex, xdata_txbuffer, sizeof xdata_txbuffer);
+  78   3            private_downlink(xdata_txbuffer);
+  79   3            //private_advanceGetFrameIndex(); TOSHOW very dangerous duplicate!!
+  80   3          }
+  81   2          private_advanceGetFrameIndex();
+  82   2          if (!g_getFrame.numPages)
+  83   2            break;
+  84   2        }
+  85   1      }
+  86          
+  87          void private_downlinkNextPinFrame() {
+  88   1        char index;
+  89   1        char status;
+  90   1        for (index = 0; index < XDATSEG_NUMEL; ++index) {
+  91   2          if ((g_pinFrame.mask & (1L << g_pinFrame.frameIndex.index)) != 0L) {
+  92   3            status = Hash_getFrame(&g_pinFrame.frameIndex, xdata_txbuffer, sizeof xdata_txbuffer);
+  93   3            private_downlink(xdata_txbuffer);
+  94   3            if (status)
+  95   3              printf("pin ok ");
+  96   3            else
+  97   3              printf("pin wrong ");
+  98   3            ++g_pinFrame.frameIndex.index;
+  99   3          }
+ 100   2          ++g_pinFrame.frameIndex.index;
+ 101   2          if (g_pinFrame.frameIndex.index == XDATSEG_NUMEL)
+ 102   2            break;
+ 103   2        }
+ 104   1      }
+ 105          
+ 106          void private_downlinkBlob(short count) {
+ 107   1        char success;
+ 108   1        success = Hash_getBlob(g_getBlob.index, g_getBlob.type, count, xdata_txbuffer, sizeof xdata_txbuffer);
+ 109   1        if (success) // gnd station cannot process corrupt frame, but instead has to monitor the parameter SD_re
+             -ad_error
+ 110   1          private_downlink(xdata_txbuffer);
+C51 COMPILER V9.02   STATE_DOWNLINK                                                        05/20/2014 11:03:52 PAGE 3   
+
+ 111   1      }
+ 112          
+ 113          #define BEACON_HEADER_LENGTH 7
+ 114          void private_downlinkBeacon() {
+ 115   1        if (Trxuv_isAvailable()) { // don't remove!
+ 116   2          xdata_txbuffer[0] = 'S';
+ 117   2          xdata_txbuffer[1] = 'V';
+ 118   2          xdata_txbuffer[2] = 'E';
+ 119   2          xdata_txbuffer[3] = 'L';
+ 120   2          xdata_txbuffer[4] = 'O';
+ 121   2          xdata_txbuffer[5] = 'X';
+ 122   2          xdata_txbuffer[6] = 'I';
+ 123   2          memcpy(&xdata_txbuffer[BEACON_HEADER_LENGTH], g_c_beacon, sizeof g_c_beacon);
+ 124   2          Comm_setTxCwCharRate(g_trxuv.rateCW);
+ 125   2          Comm_txCwPut(xdata_txbuffer, BEACON_HEADER_LENGTH + sizeof g_c_beacon); // function call already inclu
+             -des a delay for smbus tx completion
+ 126   2        }
+ 127   1        downlink_issued |= DOWNLINK_ISSUED_CW_MASK; // according to tests, the beacon has effect on the tx_avail
+             -able
+ 128   1      }
+ 129          
+ 130          extern Statetask g_statetask_downlink;
+ 131          
+ 132          #define   DOWNLINK_BUFFER_SIZE           5 // number of different return values {0, 1, 2, 3, 4} from isis 
+             -comm board when asking how many tx frames are available for buffering
+ 133          #define   DOWNLINK_COMPLETED_SEC         4 // upper bound of seconds after which we assume a single frame 
+             -has been removed from tx buffer
+ 134          #define   DOWNLINK_IDLE_ACTIVE_OFF_SEC   2 // number of seconds after which tx idle active is disabled
+ 135          // in idle active mode at 1200 bps, the downlink of 110 frames of 231 bytes each takes 191.97 sec
+ 136          // => 1 frame takes 1.7452 sec, data rate is 132.36 B/sec
+ 137          
+ 138          char State_downlink(char* subtask) {
+ 139   1        char release = 0;
+ 140   1        char index; // has to be signed!
+ 141   1        unsigned char length;
+ 142   1        if (DOWNLINK_COMPLETED_SEC < Slowtask_sinceLast(&g_slow_beacon)) // assume after a few seconds of no dow
+             -nlink command -> can assume that one slot in buffer is vacant
+ 143   1          g_statetask_downlink.task.delay = STATE_DONWLINK_DELAY_MIN; // this ensures that uplinks are acknowled
+             -ged swiftly, and any new downlink are processed
+ 144   1        // ---
+ 145   1        if (Trxuv_isAvailable() || Recon_isDebugPrintEnabled()) {
+ 146   2          switch (*subtask) {
+ 147   3          case 0:
+ 148   3            downlink_issued = 0; // will be overridden in case of downlink TODO bad style
+ 149   3            // --- Acknowledgment = 1
+ 150   3            if (!downlink_issued)
+ 151   3              if (g_c_sendAck_flag) { // send acknowledgement for uplink
+ 152   4                      if (isRadioUp){ //ian 20140310: only sends the acknowledgment downlink for uplink if the uplink i
+             -s from the radio
+ 153   5                                                      length = Mccif_formatContent(XDATA_OBDH_ACK_OFFSET, XDATA_OBDH_ACK_LENGTH, xdata_txbuffer);
+ 154   5                                                      private_downlink(xdata_txbuffer);
+ 155   5                      }
+ 156   4                g_c_sendAck_flag = 0;
+ 157   4              }
+ 158   3            // --- Recovery (low) = 2
+ 159   3            if (!downlink_issued) //recovery message has the highest priority apart from acknowledgement
+ 160   3              for (index = 0; index < GETBLOB_LO_NUMEL; ++index)
+ 161   3                if (g_getBlob.lo[index] != DOWNLINK_IGNORE_LO) {
+ 162   4                  private_downlinkBlob(g_getBlob.lo[index]); // even if fails, do not retry or attempt next
+ 163   4                  g_getBlob.lo[index] = DOWNLINK_IGNORE_LO;
+ 164   4                  break;
+ 165   4                }
+C51 COMPILER V9.02   STATE_DOWNLINK                                                        05/20/2014 11:03:52 PAGE 4   
+
+ 166   3            // --- Recovery (hi) = 3
+ 167   3            if (!downlink_issued)
+ 168   3              for (index = 0; index < GETBLOB_HI_NUMEL; ++index)
+ 169   3                if (g_getBlob.hi[index] != DOWNLINK_IGNORE_HI) {
+ 170   4                  private_downlinkBlob(g_getBlob.hi[index]); // even if fails, do not retry or attempt next
+ 171   4                  g_getBlob.hi[index] = DOWNLINK_IGNORE_HI;
+ 172   4                  break;
+ 173   4                }
+ 174   3            // --- Blob = 4
+ 175   3            if (!downlink_issued)
+ 176   3              if (g_getBlob.head < g_getBlob.tail) { //Blob data has the second highest priority after recovery
+ 177   4                private_downlinkBlob(g_getBlob.head); // even if fails, do not retry or attempt next
+ 178   4                ++g_getBlob.head;
+ 179   4              }
+ 180   3            // --- WOD = 5
+ 181   3            if (!downlink_issued) //WOD data has the third highest priority
+ 182   3              if (g_getFrame.mask != 0L && 0 < g_getFrame.numPages)
+ 183   3                private_downlinkNextGetFrame();
+ 184   3            // --- Pin = 6
+ 185   3            if (!downlink_issued) //this will only send certain type of AX25 message
+ 186   3              if (g_pinFrame.mask != 0L && g_pinFrame.frameIndex.index < XDATSEG_NUMEL)
+ 187   3                private_downlinkNextPinFrame();
+ 188   3            // --- To delay the groundpass termination
+ 189   3            if (downlink_issued && g_slow_gndPass.mode == slowtask_executeOnce) //if it has downlink issued here
+             - while in the groundpass
+ 190   3              Slowtask_fromNow(&g_slow_gndPass); // postpone groundpass task to be terminated
+ 191   3            // --- Real_time HK = 7
+ 192   3            if (!downlink_issued)
+ 193   3              if (g_rtHk.hasNext) { //should have the least priority (apart from unused item)!
+ 194   4                g_rtHk.hasNext = 0; // clear flag
+ 195   4                private_downlink(txframeRelay);
+ 196   4              }
+ 197   3            // --- CW beacon = 8
+ 198   3            if (uptime.total >= DOWNLINK_INACTIVE_TIME && g_slow_gndPass.mode == slowtask_disabled) { //don't se
+             -nd any CW beacon before this time elapses
+ 199   4              if (downlink_issued) // was ax25 frame sent
+ 200   4                Slowtask_fromNow(&g_slow_beacon); // prevents beacon to be sent right after
+ 201   4              else if (Slowtask_isReady(&g_slow_beacon)) // check if beacon downlink is encouraged
+ 202   4                private_downlinkBeacon();
+ 203   4            }
+ 204   3            // ---
+ 205   3            if (downlink_issued) { // if either ax25 or beacon was sent
+ 206   4              Timertask_setExecuteOnce(&g_stateTask, DOWNLINK_MAX_DURATION_MS);
+ 207   4              ++*subtask;
+ 208   4            } else { // in case no downlink
+ 209   4              if ((DOWNLINK_IDLE_ACTIVE_OFF_SEC < Slowtask_sinceLast(&g_slow_beacon) && g_slow_beacon.mode == sl
+             -owtask_repeated)
+ 210   4                              || g_slow_beacon.mode == slowtask_disabled)// timeout period of no downlink
+ 211   4                if (Trxuv_isAvailable() && Trxuv_isIdleActive())
+ 212   4                  Comm_setTxIdleState(0); // this required for safety. do not remove, since otherwise COMM drain
+             -s too much power etc.
+ 213   4              release = 1;
+ 214   4            }
+ 215   3            break;
+ 216   3          case 1: // when either beacon or ax25 frame has just been commissioned
+ 217   3            if (Timertask_isReady(&g_stateTask)) { // when delay has elapsed
+ 218   4              if (Trxuv_isAvailable()) { // comm still on
+ 219   5                if (Comm_txAx25AndCwGet(&index)) { // get tx available / send status
+ 220   6                  if (0 <= index && index < DOWNLINK_BUFFER_SIZE) // check return value
+ 221   6                    g_statetask_downlink.task.delay = g_trxuv.delayMap[index] / Trxuv_getTxRateFactor();
+ 222   6                  else {
+ 223   7                    g_statetask_downlink.task.delay = g_trxuv.delayMap[2] / Trxuv_getTxRateFactor(); // index ==
+C51 COMPILER V9.02   STATE_DOWNLINK                                                        05/20/2014 11:03:52 PAGE 5   
+
+             - 0
+ 224   7                    printf("!IDX %bd ", index);
+ 225   7                  }
+ 226   6                }
+ 227   5                if (downlink_issued & DOWNLINK_ISSUED_AX25_MASK) // was ax25 frame issued
+ 228   5                  if (!Trxuv_isIdleActive() && g_trxuv.autoIdleActive)
+ 229   5                    Comm_setTxIdleState(1);
+ 230   5              }
+ 231   4              release = 1; // after delay, release state in any case
+ 232   4            }
+ 233   3            break;
+ 234   3          }
+ 235   2        }
+ 236   1        return release;
+ 237   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1843    ----
+   CONSTANT SIZE    =     29    ----
+   XDATA SIZE       =     19    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

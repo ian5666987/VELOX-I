@@ -1,0 +1,174 @@
+C51 COMPILER V9.02   OBDH_CONSTANT                                                         05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_CONSTANT
+OBJECT MODULE PLACED IN obdh_constant.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_constant.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          #include <string.h>
+   5          
+   6          #include "Velox_beacon.h"
+   7          
+   8          #include "sdcard_redundant.h"
+   9          
+  10          #include "shared_general.h"
+  11          #include "shared_obdh.h"
+  12          #include "shared_adcs.h"
+  13          #include "shared_pwrs.h"
+  14          
+  15          #include "obdh_constant.h"
+  16          #include "obdh_cqt.h"
+  17          #include "obdh_debug.h"
+  18          #include "obdh_globalvariables.h"
+  19          #include "obdh_trxuv.h"
+  20          
+  21          #include "hash_blob.h"
+  22          #include "hash_frame.h"
+  23          #include "hash_util.h"
+  24          
+  25          #include "state_util.h"
+  26          
+  27          #define XDATASEGMENT_APPEND(sys, ofs, len) \
+  28              xdatSeg[count].system = sys; \
+  29              xdatSeg[count].offset = ofs; \
+  30              xdatSeg[count].length = len; \
+  31              ++count
+  32          
+  33          extern char g_c_gearbox_switch;
+  34          
+  35          XdataSegment xdata xdatSeg[XDATSEG_NUMEL];
+  36          
+  37          void Constant_init() {
+  38   1        char count = 0;
+  39   1        XDATASEGMENT_APPEND(OBDH_ADDRESS, XDATA_OBDH_SC0_OFFSET, XDATA_OBDH_SC0_LENGTH);
+  40   1        XDATASEGMENT_APPEND(OBDH_ADDRESS, XDATA_OBDH_SC1_OFFSET, XDATA_OBDH_SC1_LENGTH);
+  41   1        XDATASEGMENT_APPEND(OBDH_ADDRESS, XDATA_OBDH_SC2_OFFSET, XDATA_OBDH_SC2_LENGTH);
+  42   1        XDATASEGMENT_APPEND(OBDH_ADDRESS, XDATA_OBDH_SC3_OFFSET, XDATA_OBDH_SC3_LENGTH);
+  43   1        XDATASEGMENT_APPEND(OBDH_ADDRESS, XDATA_OBDH_STA_OFFSET, XDATA_OBDH_STA_LENGTH);
+  44   1        // --- 5
+  45   1        XDATASEGMENT_APPEND(OBDH_ADDRESS, XDATA_OBDH_MET_OFFSET, XDATA_OBDH_MET_LENGTH);
+  46   1        XDATASEGMENT_APPEND(OBDH_ADDRESS, XDATA_OBDH_EXT_OFFSET, XDATA_OBDH_EXT_LENGTH);
+  47   1        XDATASEGMENT_APPEND(PWRS_ADDRESS, XDATA_PWRS_MET_OFFSET, XDATA_PWRS_MET_LENGTH);
+  48   1        XDATASEGMENT_APPEND(PWRS_ADDRESS, XDATA_PWRS_CAL_OFFSET, XDATA_PWRS_CAL_LENGTH);
+  49   1        XDATASEGMENT_APPEND(PWRS_ADDRESS, XDATA_PWRS_ETC_OFFSET, XDATA_PWRS_ETC_LENGTH);
+  50   1        // --- 10
+  51   1        XDATASEGMENT_APPEND(PWRS_ADDRESS, XDATA_PWRS_HK_OFFSET, XDATA_PWRS_HK_LENGTH);
+  52   1        XDATASEGMENT_APPEND(PWRS_ADDRESS, XDATA_PWRS_PAY_OFFSET, XDATA_PWRS_PAY_LENGTH);
+  53   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_HK_OFFSET, XDATA_ADCS_HK_LENGTH);
+  54   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_MET_OFFSET, XDATA_ADCS_MET_LENGTH);
+  55   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_SUNSENSOR1_OFFSET, XDATA_ADCS_SUNSENSOR1_LENGTH);
+C51 COMPILER V9.02   OBDH_CONSTANT                                                         05/20/2014 11:03:51 PAGE 2   
+
+  56   1        // --- 15
+  57   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_SUNSENSOR2_OFFSET, XDATA_ADCS_SUNSENSOR2_LENGTH);
+  58   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_IMU_OFFSET, XDATA_ADCS_IMU_LENGTH);
+  59   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_ADS_OFFSET, XDATA_ADCS_ADS_LENGTH);
+  60   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_EKF_OFFSET, XDATA_ADCS_EKF_LENGTH);
+  61   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_ACT_OFFSET, XDATA_ADCS_ACT_LENGTH);
+  62   1        // --- 20
+  63   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_ACS_OFFSET, XDATA_ADCS_ACS_LENGTH);
+  64   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_ACS2_OFFSET, XDATA_ADCS_ACS2_LENGTH);
+  65   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_ACS3_OFFSET, XDATA_ADCS_ACS3_LENGTH);
+  66   1        XDATASEGMENT_APPEND(ADCS_ADDRESS, XDATA_ADCS_GPS_OFFSET, XDATA_ADCS_GPS_LENGTH);
+  67   1        // --- 24
+  68   1      #if XDATSEG_NUMEL != 24 // total
+              #error "out of sync: XDATSEG_NUMEL"
+              #endif
+  71   1        // ---
+  72   1        memset(&g_sdcard, 0, sizeof g_sdcard);
+  73   1        // ---
+  74   1        g_hashFrame.offset = 0x030000;
+  75   1        g_hashFrame.pages = 0x020000; //default value changes to 0x020000 ian: updated on 20140207, after agreem
+             -ent by the team members
+  76   1        g_hashFrame.stride = XDATSEG_NUMEL;
+  77   1        g_hashFrame.copies = 1;
+  78   1        // ---
+  79   1        Slowtask_setPeriodic(&g_putFrame.task, 10); // every 10 seconds at first, and changed to every minute af
+             -ter one day
+  80   1        g_putFrame.putIterator = putIterator_inactive;
+  81   1        g_putFrame.frameIndex.page = 0;
+  82   1        g_putFrame.frameIndex.index = -1; // -1 is an invalid index, but will be set correctly by xdatSegGet
+  83   1        g_putFrame.mask = WOD_DEFAULT_MASK;  //ian 20131024: set this as default after meeting on 20131021
+  84   1        // ---
+  85   1        g_getFrame.frameIndex.page = 0; // 0 would be the first page
+  86   1        g_getFrame.frameIndex.index = 0; // 0 would be the first to send, if mask has first bit set
+  87   1        g_getFrame.mask = 1L << XDATSEG_NUMEL;
+  88   1        --g_getFrame.mask;
+  89   1        g_getFrame.stride = 1;
+  90   1        g_getFrame.numPages = 0;
+  91   1        // ---
+  92   1        g_pinFrame.frameIndex.page = 0;
+  93   1        g_pinFrame.frameIndex.index = XDATSEG_NUMEL; // indicates that no downlink is desired
+  94   1        g_pinFrame.mask = 0;
+  95   1        // ---
+  96   1        g_intercom.timeout = 250; // ms
+  97   1        g_intercom.invalids = 0;
+  98   1        g_intercom.timeouts = 0;
+  99   1        g_intercom.lastFailedSystem = 0;
+ 100   1        // ---
+ 101   1        g_manifest.offset = 0x10000; // small numbers, e.g. 0x100 have produced errors
+ 102   1        g_manifest.divider = 90; // not used
+ 103   1        g_manifest.copies = 5; // During development, think about friendly way (put 2), during flight phase, be 
+             -more secure (put 5)
+ 104   1        g_manifest.failures = 0;
+ 105   1        // ---
+ 106   1        g_c_sendAck_flag = 0;
+ 107   1        g_sendAck.uplinkId = -1;
+ 108   1        // ---
+ 109   1        g_hashBlob.offset = 0x330000;
+ 110   1        g_hashBlob.copies = 1;
+ 111   1        // ---
+ 112   1        g_getBlob.index = 0;
+ 113   1        g_getBlob.type = 1;
+ 114   1        g_getBlob.head = 0;
+C51 COMPILER V9.02   OBDH_CONSTANT                                                         05/20/2014 11:03:51 PAGE 3   
+
+ 115   1        g_getBlob.tail = 0;
+ 116   1        memset(g_getBlob.lo, -1, sizeof g_getBlob.lo);
+ 117   1        memset(g_getBlob.hi, -1, sizeof g_getBlob.hi);
+ 118   1        // ---
+ 119   1        memset(&g_gndCommand, 0, sizeof g_gndCommand);
+ 120   1        // ---
+ 121   1        g_us_obdh_channel_status = 0;
+ 122   1        g_c_adcsIsReadyIn = 2;
+ 123   1        // ---
+ 124   1        memset(&g_rtHk, 0, sizeof g_rtHk); // volatile mask = 0; hasNext = 0;
+ 125   1        Slowtask_setRepeated(&g_rtHk.task, 30); //ian 20131024: change the default from 60 seconds to 30 seconds
+             - after meeting on 20131021
+ 126   1        g_rtHk.template = HK_DEFAULT_MASK; //ian 20131024: set this as default after meeting on 20131021
+ 127   1        // ---
+ 128   1        g_slow_gndPass.delay = 180; // ian: the groundpass here is now set as 3 minutes before it escape
+ 129   1        Slowtask_setDisabled(&g_slow_gndPass);
+ 130   1        // ---
+ 131   1        Slowtask_setRepeated(&g_slow_beacon, 60); //ian 20131024: change the default from 240 to 60 after meetin
+             -g on 20131021
+ 132   1        // ---
+ 133   1        Beacon_setUnassigned(g_c_beacon, sizeof g_c_beacon);
+ 134   1        // ---
+ 135   1        g_c_gearbox_switch = GEAR_NO_CHANGE;
+ 136   1        // ---
+ 137   1        sd_card_store_failures = 0;
+ 138   1        // --- ian 20140310: add this to distinguish between radioUplink and wireUplink
+ 139   1        isRadioUp = 0; //radio uplink will have radio downlink acknowledgment. Otherwise, don't send radio downl
+             -ink!
+ 140   1        g_c_byPassPowerCheckOnComm = 0; //put the default as not by-passing
+ 141   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   3160    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     97    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

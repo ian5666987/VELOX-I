@@ -1,0 +1,84 @@
+C51 COMPILER V9.02   STATE_SCHEDULER                                                       05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_SCHEDULER
+OBJECT MODULE PLACED IN state_scheduler.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_scheduler.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          #include <stdio.h>
+   5          
+   6          #include "mccif_active.h"
+   7          #include "mccif_xdata.h"
+   8          
+   9          #include "shared_general.h"
+  10          
+  11          #include "state_util.h"
+  12          
+  13          #include "obdh_constant.h"
+  14          #include "obdh_globalvariables.h"
+  15          #include "obdh_recon.h"
+  16          
+  17          char State_scheduler(char* subtask) {
+  18   1        char release = 0; // default return choice: do not release state, unless specific set (see release = 1; 
+             -instruction below)
+  19   1        short length;
+  20   1        char buffer[MCCIF_DATA_OFFSET + MCCIF_COMMAND_MAXLEN + 2];
+  21   1        switch (*subtask) {
+  22   2        case 0: // sending request to check if XBee & PSAT housekeeping data is available
+  23   2          // Check if there are overdue schedules. The time will also be updated here!! Ideally, this is to be c
+             -alled every second
+  24   2          if (Schedule_hasNext()) { // return 0 or 1 depending if message was prepared
+  25   3            if (schedule[0].xdatSeg.system == mccif_localSystem) {
+  26   4              Mccif_formatSet( //
+  27   4                  schedule[0].xdatSeg.system, //
+  28   4                  schedule[0].xdatSeg.offset, //
+  29   4                  schedule[0].xdatSeg.length, //
+  30   4                  schedule[0].arg, //
+  31   4                  buffer); // this could easily be done outside
+  32   4              Mccif_localSet(buffer);
+  33   4              Schedule_remove(0, 1);
+  34   4              release = 1;
+  35   4            } else {
+  36   4              if (Subsystem_isAvailable(schedule[0].xdatSeg.system)) {
+  37   5                StateUtil_pokeSetXdata(schedule[0].xdatSeg.system, //
+  38   5                    schedule[0].xdatSeg.offset, //
+  39   5                    schedule[0].xdatSeg.length, //
+  40   5                    schedule[0].arg);
+  41   5                printf("scheduler waits... ");
+  42   5                ++*subtask;
+  43   5              } else
+  44   4                release = 1; // subsystem not available, cannot proceed
+  45   4            }
+  46   3          } else
+  47   2            release = 1;
+  48   2          break;
+  49   2        case 1:
+  50   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  51   3            Schedule_remove(0, 1);
+  52   3            release = 1;
+  53   3          }
+C51 COMPILER V9.02   STATE_SCHEDULER                                                       05/20/2014 11:03:52 PAGE 2   
+
+  54   2          break;
+  55   2        }
+  56   1        return release;
+  57   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    325    ----
+   CONSTANT SIZE    =     20    ----
+   XDATA SIZE       =     27    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

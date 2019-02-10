@@ -1,0 +1,78 @@
+C51 COMPILER V9.02   STATE_FERRYXBEE                                                       05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_FERRYXBEE
+OBJECT MODULE PLACED IN state_ferryXBee.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_ferryXBee.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <stdio.h>
+   4          
+   5          #include "hash_blob.h"
+   6          
+   7          #include "shared_general.h"
+   8          #include "shared_pwrs.h"
+   9          
+  10          #include "obdh_constant.h"
+  11          #include "obdh_globalvariables.h"
+  12          #include "obdh_recon.h"
+  13          
+  14          #include "state_util.h"
+  15          
+  16          // Transfer [XBee & PSAT data] (1 frame) to OBDH using polling method
+  17          char State_ferryXBee(char* subtask) {
+  18   1        char release = 0; // default return choice: do not release state, unless specific set (see release = 1; 
+             -instruction below)
+  19   1        short length;
+  20   1        char value;
+  21   1        switch (*subtask) {
+  22   2        case 0: // sending request to check if XBee & PSAT housekeeping data is available
+  23   2          StateUtil_pokeRequestXdata(PWRS_ADDRESS, XDATA_XBEE_TO_OBDH_READY, 1);
+  24   2          ++*subtask;
+  25   2          break;
+  26   2        case 1: // waiting for reply
+  27   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  28   3            if (i2c_rxbuffer[MCCIF_DATA_OFFSET + 0]) { // contains g_uc_xbee_to_obdh_data_ready
+  29   4              // optional: to add in length to obtain....
+  30   4              StateUtil_pokeRequestXdata(PWRS_ADDRESS, XDATA_PWRS_XBE_OFFSET, XDATA_PWRS_XBE_LENGTH);
+  31   4              ++*subtask;
+  32   4            } else
+  33   3              release = 1; // else release state
+  34   3          }
+  35   2          break;
+  36   2        case 2: // waiting for reply
+  37   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  38   3            Hash_putBlob(i2c_rxbuffer, length);
+  39   3            Recon_debugPrint(i2c_rxbuffer, length);
+  40   3            printf("xbee frame received!\r\n");
+  41   3            value = 0;
+  42   3            StateUtil_pokeSetXdata(PWRS_ADDRESS, XDATA_XBEE_TO_OBDH_READY, 1, &value); // tear down flag
+  43   3            ++*subtask; // go to next state to check if PSAT data is available
+  44   3          }
+  45   2          break;
+  46   2        case 3: // wait for set reply
+  47   2          if (StateUtil_peek(&length, &release) == reply_success)
+  48   2            release = 1; // else release state
+  49   2          break;
+  50   2        }
+  51   1        return release;
+  52   1      }
+
+
+C51 COMPILER V9.02   STATE_FERRYXBEE                                                       05/20/2014 11:03:52 PAGE 2   
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    374    ----
+   CONSTANT SIZE    =     23    ----
+   XDATA SIZE       =      7    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

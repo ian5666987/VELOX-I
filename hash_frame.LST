@@ -1,0 +1,86 @@
+C51 COMPILER V9.02   HASH_FRAME                                                            05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE HASH_FRAME
+OBJECT MODULE PLACED IN hash_frame.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE hash_frame.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          #include <string.h>
+   5          
+   6          #include "sdcard_redundant.h"
+   7          
+   8          #include "mccif_spy.h"
+   9          
+  10          #include "hash_frame.h"
+  11          
+  12          // private function
+  13          unsigned long Hash_getAddress(FrameIndex* frameIndex) {
+  14   1        unsigned long page = frameIndex->page; //ian: following the change on FrameIndex
+  15   1        page %= g_hashFrame.pages; // safety measure to prevent out of bounds/"pages" access, however does not a
+             -lter value of frameIndex->page (because no immediate need)
+  16   1        return g_hashFrame.offset + (page * (long) g_hashFrame.stride + frameIndex->index) * (long) g_hashFrame.
+             -copies;
+  17   1      }
+  18          
+  19          char Hash_getFrame(FrameIndex* frameIndex, void* buffer, short length) {
+  20   1        memset(buffer, 0, length); // to assert that buffer does not contain relics of old frame data
+  21   1        return SDred_read(Hash_getAddress(frameIndex), buffer, length, g_hashFrame.copies);
+  22   1      }
+  23          
+  24          char Hash_putFrame(FrameIndex* frameIndex, void* buffer, short length) {
+  25   1        return SDred_write(Hash_getAddress(frameIndex), buffer, length, g_hashFrame.copies);
+  26   1      }
+  27          
+  28          //#define HASH_ADDRESS_NOT_ALLOCATED 0xFFFFFFFF
+  29          //
+  30          //// private function
+  31          //char Hash_getRelativeIndex(char absIndex, unsigned long mask){
+  32          //      char i, relativeIndex = -1;
+  33          //      for (i = 0; i < absIndex; i++)
+  34          //              if (mask & (1L << i))
+  35          //                      relativeIndex++;
+  36          //      return relativeIndex;
+  37          //}
+  38          //
+  39          //unsigned long Hash_getAddress(FrameIndex* frameIndex, unsigned long mask) {
+  40          //  unsigned long page = frameIndex->page; //ian: following the change on FrameIndex
+  41          //  page %= g_hashFrame.pages; // safety measure to prevent out of bounds/"pages" access, however does not
+             - alter value of frameIndex->page (because no immediate need)
+  42          //  char relativeIndex = Hash_getRelativeIndex(frameIndex->index, mask);
+  43          //  return relativeIndex >= 0 ? g_hashFrame.offset + (page * (long) g_hashFrame.stride + relativeIndex) * 
+             -(long) g_hashFrame.copies : HASH_ADDRESS_NOT_ALLOCATED;
+  44          //}
+  45          //
+  46          //char Hash_getFrame(FrameIndex* frameIndex, void* buffer, short length) {
+  47          //  memset(buffer, 0, length); // to assert that buffer does not contain relics of old frame data
+  48          //  unsigned long address = Hash_getAddress(frameIndex, g_getFrame.mask);
+  49          //  return address == HASH_ADDRESS_NOT_ALLOCATED ? 0 : SDred_read(address, buffer, length, g_hashFrame.cop
+             -ies);
+  50          //}
+C51 COMPILER V9.02   HASH_FRAME                                                            05/20/2014 11:03:51 PAGE 2   
+
+  51          //
+  52          //char Hash_putFrame(FrameIndex* frameIndex, void* buffer, short length) {
+  53          //      unsigned long address = Hash_getAddress(frameIndex, g_putFrame.mask);
+  54          //  return address == HASH_ADDRESS_NOT_ALLOCATED ? 0 : SDred_write(address, buffer, length, g_hashFrame.co
+             -pies);
+  55          //}
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    393    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     23    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

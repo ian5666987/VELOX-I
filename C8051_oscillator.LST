@@ -1,0 +1,364 @@
+C51 COMPILER V9.02   C8051_OSCILLATOR                                                      05/20/2014 11:03:50 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_OSCILLATOR
+OBJECT MODULE PLACED IN C8051_oscillator.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_oscillator.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          #include <intrins.h>   // include for _nop_ and other instructions
+   5          #include "C8051_oscillator.h"
+   6          
+   7          // the file oscillator_config.h is required to be provided by the application.
+   8          // inside, the following constants need to be #defined:
+   9          // INT_OSC       // Internal oscillator frequency
+  10          // INT_PLL_MUL   // Set PLL multiplier N
+  11          // INT_PLL_DIV   // Set PLL divider M
+  12          // EXT_OSC       // External Crystal oscillator
+  13          // EXT_PLL_MUL   // Set PLL multiplier N
+  14          // EXT_PLL_DIV   // Sets PLL divider M
+  15          
+  16          #include "oscillator_config.h"
+  17          
+  18          struct struct_pll_settings {
+  19                  unsigned char flscl_flrt;
+  20                  unsigned char divider;
+  21                  unsigned char multiplier;
+  22                  unsigned char flt_loop;
+  23                  unsigned char flt_ico;
+  24                  long div_clk;
+  25                  long out_clk;
+  26          };
+  27          
+  28          typedef struct struct_pll_settings PllSettings;
+  29          
+  30          volatile OscType oscillator_type;
+  31          volatile unsigned long osc_sysclk;
+  32          
+  33          char Oscillator_setXFCN (char* xfcn, long osc_speed){
+  34   1              if (osc_speed <= 32000)
+  35   1                      *xfcn = 0;
+  36   1              else if (osc_speed <= 84000L)
+  37   1                      *xfcn = 1;
+  38   1              else if (osc_speed <= 225000L)
+  39   1                      *xfcn = 2;
+  40   1              else if (osc_speed <= 590000L)
+  41   1                      *xfcn = 3;
+  42   1              else if (osc_speed <= 1500000L)
+  43   1                      *xfcn = 4;
+  44   1              else if (osc_speed <= 4000000L)
+  45   1                      *xfcn = 5;
+  46   1              else if (osc_speed <= 10000000L)
+  47   1                      *xfcn = 6;
+  48   1              else if (osc_speed <= 30000000L)
+  49   1                      *xfcn = 7;
+  50   1              else
+  51   1                      return 0; //osc speed too high
+  52   1              return 1;
+  53   1      }
+  54          
+  55          char Oscillator_setPllDam (OscType osc_type, OscGear osc_gear, PllSettings* pll){
+C51 COMPILER V9.02   C8051_OSCILLATOR                                                      05/20/2014 11:03:50 PAGE 2   
+
+  56   1              char divider_set[10]            = {4,4,1, 4,2,2,1, 4, 4,1}; //only for gear 4 and above, first 5 is ext divider, n
+             -ext 5 is int divider
+  57   1              char multiplier_set[10] = {7,9,3,15,9,3,2,11,13,4}; //only for gear 4 and above, first 5 is ext multiplie
+             -r, next 5 is int multiplier
+  58   1              char choice_set;
+  59   1      
+  60   1              if (osc_gear < oscillator_gear4) //not valid for gear3 and below
+  61   1                      return 0;
+  62   1      
+  63   1              choice_set = osc_gear - oscillator_gear4 + osc_type * 5;
+  64   1              pll->divider = divider_set[choice_set];
+  65   1              pll->multiplier = multiplier_set[choice_set];
+  66   1      
+  67   1              return 1;
+  68   1      }
+  69          
+  70          char Oscillator_prelimPllSetting (OscType osc_type, OscGear osc_gear, PllSettings* pll){
+  71   1              long osc_speed;
+  72   1      
+  73   1              if (Oscillator_setPllDam(osc_type, osc_gear, pll)){ //if divider and multiplier can be set correctly, the
+             -n proceeds, else return zero
+  74   2                      osc_speed = osc_type == ext_oscillator ? EXT_OSC : INT_OSC;
+  75   2                      pll->div_clk = osc_speed / pll->divider;
+  76   2                      pll->out_clk = pll->div_clk * pll->multiplier;
+  77   2      
+  78   2                      if (pll->div_clk < 5000000L || pll->div_clk >= 30000001L || pll->out_clk < 25000000L || pll->out_clk >= 
+             -100000001L)
+  79   2                              return 0; //invalid result
+  80   2      
+  81   2                      if (pll->div_clk < 8000000L)
+  82   2                              pll->flt_loop = 0x0f;
+  83   2                      else if (pll->div_clk < 12500000L)
+  84   2                              pll->flt_loop = 0x07;
+  85   2                      else if (pll->div_clk < 19500000L)
+  86   2                              pll->flt_loop = 0x03;
+  87   2                      else
+  88   2                              pll->flt_loop = 0x01;
+  89   2      
+  90   2                      if (pll->out_clk < 42500000L)
+  91   2                              pll->flt_ico = 0x30;
+  92   2                      else if (pll->out_clk < 52500000L)
+  93   2                              pll->flt_ico = 0x20;
+  94   2                      else if (pll->out_clk < 72500000L)
+  95   2                              pll->flt_ico = 0x10;
+  96   2                      else
+  97   2                              pll->flt_ico = 0x00;
+  98   2      
+  99   2                      pll->flscl_flrt = ((pll->out_clk-1)/25000000L) << 4; //from the if else statement below
+ 100   2      
+ 101   2      //              if (pll->out_clk < 25000001L)
+ 102   2      //                      pll->flscl_flrt = 0x00;
+ 103   2      //              else if (pll->out_clk < 50000001L)
+ 104   2      //                      pll->flscl_flrt = 0x10;
+ 105   2      //              else if (pll->out_clk < 75000001L)
+ 106   2      //                      pll->flscl_flrt = 0x20;
+ 107   2      //              else
+ 108   2      //                      pll->flscl_flrt = 0x30;
+ 109   2              } else
+ 110   1                      return 0;
+ 111   1      
+ 112   1              return 1;
+ 113   1      }
+C51 COMPILER V9.02   C8051_OSCILLATOR                                                      05/20/2014 11:03:50 PAGE 3   
+
+ 114          
+ 115          // Reset Source Register (RSTSRC) Refer page 182
+ 116          // Overview:        This function will be executed to check for reset cause before initialize oscillator a
+             -nd set
+ 117          //                  oscillator type to internal oscillator if reset cause is by missing clock, otherwise w
+             -ill be
+ 118          //                  external oscillator.
+ 119          
+ 120          OscType Oscillator_resetCauseCheck() {
+ 121   1        char SFRPAGE_SAVE = SFRPAGE;
+ 122   1        unsigned char l_uc_reset_source;
+ 123   1        OscType osc_type;
+ 124   1        SFRPAGE = LEGACY_PAGE;
+ 125   1      
+ 126   1        // Enable Missing Clock Detector
+ 127   1        // Select the VDD monitor as a reset source
+ 128   1        RSTSRC |= 0x06;
+ 129   1      
+ 130   1        // lsl : 28 Dec 2011 : 1742hrs : to determine the reset cause : begin
+ 131   1      
+ 132   1        // Set to external crystal initially
+ 133   1        osc_type = ext_oscillator;
+ 134   1      
+ 135   1        // Store RSTSRC
+ 136   1        l_uc_reset_source = RSTSRC;
+ 137   1      
+ 138   1        // if power on or hardware reset, set to external crystal
+ 139   1        if (!(l_uc_reset_source & 0x02)) {
+ 140   2      //  if (!((l_uc_reset_source == 0x7F) || (l_uc_reset_source == 0xFF))) {
+ 141   2          if (l_uc_reset_source & 0x04) { // missing clock
+ 142   3            // if missing clock detected, set to internal crystal
+ 143   3            osc_type = int_oscillator;
+ 144   3          }
+ 145   2        }
+ 146   1        SFRPAGE = SFRPAGE_SAVE;
+ 147   1        return osc_type;
+ 148   1      }
+ 149          
+ 150          char Oscillator_setSysclkFromPll(OscType osc_type, OscGear osc_gear, PllSettings* pll) { //failure is not 
+             -an option here
+ 151   1              char SFRPAGE_SAVE = SFRPAGE;
+ 152   1        short count;
+ 153   1      
+ 154   1        if (!Oscillator_prelimPllSetting (osc_type, osc_gear, pll)) //if the initialization is unsuccessful, ret
+             -urns 0
+ 155   1              return 0;
+ 156   1      
+ 157   1        SFRPAGE = CONFIG_PAGE;
+ 158   1      
+ 159   1              // Derive SYSCLK (0x01 -> from external oscillator, 0x00 -> from internal oscillator)
+ 160   1              CLKSEL = !osc_type; //if osc_type = external, then this value is 1, zero otherwise
+ 161   1      
+ 162   1              // Set PLL source (0x04 -> from external oscillator, 0x00 -> from internal oscillator)
+ 163   1              PLL0CN = (!osc_type) << 2;
+ 164   1      
+ 165   1              if (osc_type == ext_oscillator)
+ 166   1                      // Cache Control Register (CCH0CN) Refer to page 215
+ 167   1                      CCH0CN &= ~0x20;
+ 168   1      
+ 169   1              SFRPAGE = LEGACY_PAGE;
+ 170   1      
+ 171   1              FLSCL = pll->flscl_flrt;
+C51 COMPILER V9.02   C8051_OSCILLATOR                                                      05/20/2014 11:03:50 PAGE 4   
+
+ 172   1      
+ 173   1              SFRPAGE = CONFIG_PAGE;
+ 174   1      
+ 175   1              if (osc_type == ext_oscillator)
+ 176   1                      CCH0CN |= 0x20;
+ 177   1      
+ 178   1        // Enable Power to PLL
+ 179   1        PLL0CN |= 0x01;
+ 180   1      
+ 181   1        // Set PLL divider value
+ 182   1        PLL0DIV = pll->divider;
+ 183   1      
+ 184   1        // Set the PLL filter loop and ICO bits
+ 185   1        PLL0FLT = pll->flt_loop; // Program the PLLLP3–0 bits (PLL0FLT.3–0) to the appropriate range for the div
+             -ided reference frequency.
+ 186   1        PLL0FLT |= pll->flt_ico; // Program the PLLICO1-0 bits (PLL0FLT.5–4) to the appropriate range for the PL
+             -L output frequency.
+ 187   1      
+ 188   1        // Set PLL multiplier value
+ 189   1        PLL0MUL = pll->multiplier;
+ 190   1      
+ 191   1        // Wait at least 5us
+ 192   1        for (count = 0; count < 100; ++count)
+ 193   1          ;
+ 194   1      
+ 195   1        // Enable the PLL
+ 196   1        PLL0CN |= 0x02;
+ 197   1      
+ 198   1        // Wait until PLL frequency is locked
+ 199   1        while (!(PLL0CN & 0x10))
+ 200   1          ;
+ 201   1      
+ 202   1        // Select PLL as SYSCLK source
+ 203   1        CLKSEL = 0x02;
+ 204   1      
+ 205   1              SFRPAGE = SFRPAGE_SAVE;
+ 206   1              return 1;
+ 207   1      }
+ 208          
+ 209          // PreCondition:    only when oscillator_type is ext_oscillator
+ 210          // Output:          return enum int_oscillator if clock is unstable, otherwise return enum ext_oscillator
+ 211          // Overview:        This function will be executed to initialize external oscillator and set Phase-Locked 
+             -Loop (PLL) to
+ 212          //                  achieve frequency of 38707200 Hz.
+ 213          OscType Oscillator_attemptExtInit(OscGear* osc_gear, PllSettings* pll) {
+ 214   1        char SFRPAGE_SAVE = SFRPAGE;
+ 215   1        char isStable;
+ 216   1        unsigned short count;
+ 217   1        char xfcn;
+ 218   1      
+ 219   1        if (*osc_gear < oscillator_gear3 || !Oscillator_setXFCN(&xfcn, EXT_OSC)) //External clock cannot go belo
+             -w gear3
+ 220   1              return int_oscillator; //if xfcn initialization is failed, then returns internal oscillator
+ 221   1      
+ 222   1        SFRPAGE = CONFIG_PAGE;
+ 223   1      
+ 224   1        // External Oscillator Control Register (OSCXCN) Refer page 189
+ 225   1        OSCXCN = 0x60;
+ 226   1        OSCXCN |= xfcn;
+ 227   1      
+ 228   1        // Wait 1ms for initialization
+ 229   1        for (count = 0; count < 25000; count++) {
+C51 COMPILER V9.02   C8051_OSCILLATOR                                                      05/20/2014 11:03:50 PAGE 5   
+
+ 230   2          _nop_();
+ 231   2        }
+ 232   1      
+ 233   1        // XTLVLD = 1 -> Crystal Oscillator is running and stable
+ 234   1        for (count = 0; count < 3000; ++count) {
+ 235   2          isStable = OSCXCN & 0x80;
+ 236   2          if (isStable)
+ 237   2            break;
+ 238   2        }
+ 239   1      
+ 240   1              if (isStable) {
+ 241   2                      if (*osc_gear >= oscillator_gear4) {  //attempt to use PLL for high gear only, don't run the function fo
+             -r lower gear!!!
+ 242   3                              if (!Oscillator_setSysclkFromPll(ext_oscillator, *osc_gear, pll)) { //if unsuccessful, then use normal 
+             -system clock
+ 243   4                                      *osc_gear = oscillator_gear3; //set to gear3
+ 244   4                                      CLKSEL = 0x01; //SYSCLK is derived from External oscillator circuit without PLL
+ 245   4                              }
+ 246   3                      } else
+ 247   2                              CLKSEL = 0x01; //SYSCLK is derived from External oscillator circuit without PLL
+ 248   2              } else {
+ 249   2                      SFRPAGE = SFRPAGE_SAVE;
+ 250   2                      return int_oscillator;
+ 251   2              }
+ 252   1      
+ 253   1              SFRPAGE = SFRPAGE_SAVE;
+ 254   1              return ext_oscillator;
+ 255   1      }
+ 256          
+ 257          // PreCondition:    only when oscillator_type is int_oscillator
+ 258          // Overview:        This function will be executed to initialize internal oscillator and set Phase-Locked 
+             -Loop (PLL) to
+ 259          //                  achieve frequency of 36750000 Hz.
+ 260          void Int_Oscillator_Init(OscGear* osc_gear, PllSettings* pll) {
+ 261   1              char SFRPAGE_SAVE = SFRPAGE;
+ 262   1              SFRPAGE = CONFIG_PAGE;
+ 263   1      
+ 264   1              if (*osc_gear >= oscillator_gear4) {  //attempt to use PLL for high gear only, don't run the function for
+             - lower gear!!!
+ 265   2                      //Set internal oscillator to run at its maximum frequency
+ 266   2                      OSCICN = 0x83;
+ 267   2                      if (!Oscillator_setSysclkFromPll(int_oscillator, *osc_gear, pll)) { //if unsuccessful, then use normal s
+             -ystem clock
+ 268   3                              *osc_gear = 3; //Reset to gear 3 when unsuccessful
+ 269   3                              OSCICN = 0x83;
+ 270   3                              CLKSEL = 0x00; //SYSCLK is derived from internal oscillator circuit without PLL
+ 271   3                      }
+ 272   2              } else {
+ 273   2                      OSCICN = 0x80 + *osc_gear; //To divide internal oscillator by 1, 2, 4, or 8
+ 274   2                      CLKSEL = 0x00; //To use internal oscillator as reference for system clock
+ 275   2              }
+ 276   1      
+ 277   1              SFRPAGE = SFRPAGE_SAVE;
+ 278   1      }
+ 279          
+ 280          // PreCondition:    only when oscillator_type is ext_oscillator
+ 281          // Overview:        This function will be executed in the main function to determine which type of oscilla
+             -tor to be
+ 282          //                  used and initialize the oscillator to achieve desired SYSCLK frequency.
+ 283          void Oscillator_init(OscGear osc_gear) { //ian 20130718: different gear to control the oscillator speed
+ 284   1              PllSettings pll;
+ 285   1              if (osc_gear > oscillator_gear8)
+C51 COMPILER V9.02   C8051_OSCILLATOR                                                      05/20/2014 11:03:50 PAGE 6   
+
+ 286   1                      osc_gear = oscillator_gear8; //Limit gear to gear8
+ 287   1        oscillator_type = Oscillator_resetCauseCheck();
+ 288   1        if (oscillator_type == ext_oscillator)
+ 289   1          oscillator_type = Oscillator_attemptExtInit(&osc_gear, &pll);
+ 290   1        // ---
+ 291   1        if (oscillator_type == int_oscillator)
+ 292   1          Int_Oscillator_Init(&osc_gear, &pll);
+ 293   1        // --- calculate system clock based on the latest gear applied
+ 294   1              if (osc_gear >= oscillator_gear4) //for gear 4 and above, use PLL output clock calculation
+ 295   1                      osc_sysclk = pll.out_clk;
+ 296   1              else if (osc_gear == oscillator_gear3 && oscillator_type == ext_oscillator) //there are two cases
+ 297   1                      osc_sysclk = EXT_OSC;
+ 298   1              else //for gear3 and lower, other than the case above, it must use internal clock
+ 299   1                      osc_sysclk = INT_OSC / (8 >> osc_gear); //gear3 = INT_OSC/1, gear2 = INT_OSC/2, gear1 = INT_OSC/4, gear0
+             - = INT_OSC/8,
+ 300   1      }
+ 301          
+ 302          // Output:          return oscillator type (0 is external oscillator, 1 is internal oscillator)
+ 303          // Overview:        This function will be executed get the type of oscillator used.
+ 304          OscType Oscillator_getType() {
+ 305   1        return oscillator_type;
+ 306   1      }
+ 307          
+ 308          // Output:          return value of system clock frequency
+ 309          // Overview:        This function will be executed get the SYSCLK frequency based on oscillator type.
+ 310          long Oscillator_getSystemClock() {
+ 311   1              return osc_sysclk;
+ 312   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   2483    ----
+   CONSTANT SIZE    =     20    ----
+   XDATA SIZE       =     90    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

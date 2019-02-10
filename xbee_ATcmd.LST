@@ -1,0 +1,740 @@
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE XBEE_ATCMD
+OBJECT MODULE PLACED IN xbee_ATcmd.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE xbee_ATcmd.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          /*
+   2           * xbee_ATcmd.c
+   3           *
+   4           *  Created on: Dec 13, 2012
+   5           *      Author: pwrs
+   6           */
+   7          
+   8          #include <c8051f120.h>
+   9          #include <string.h>
+  10          #include "c8051_delay.h"
+  11          #include "c8051_UART1_string.h"
+  12          #include "PWRS_extern_data.h"
+  13          #include "Velox_delay.h"
+  14          #include "Velox_uart.h"
+  15          #include "xbee_ATcmd.h"
+  16          #include "xbee.h"
+  17          #include "mccif_buffer.h"
+  18          
+  19          // FIXME define this constant only in one place (or use same technique as Uart_open)
+  20          #ifndef XBEE_SIZE
+              #define XBEE_SIZE 75 // MAX transmission size is 84 (without encryption or source routing) (check using NP
+             - command), we use 9 for header and checksum, can transmit more in API mode using fragmentation (refer to Pg 55)
+              #endif
+  23          
+  24          char XBeeTxPayload[XBEE_SIZE];
+  25          char XBeeRxPayload[XBEE_SIZE]; // make size of RxPayload same as that of the Tx Payload
+  26          
+  27          unsigned char XBeeTxData = 0; // Pointer to Tx data
+  28          unsigned char XBeeTxSeqNum = 0;
+  29          
+  30          char XBeeATRqCmdResponse[3]; // Buffer to store AT Command in Remote AT command Response, last byte always
+             - zero
+  31          char XBeeATRqParamSuccess;
+  32          char XBeeATRqParamResponse[21]; // Nax number of bytes is 20 (NI command)
+  33          
+  34          char ATModePreserveRXBuffer[256]; // buffer to preserve data in RX_buffer
+  35          unsigned char ATModePreserveRxLength = 0;
+  36          
+  37          char XBeePktDelimiter[] = "XB-";
+  38          
+  39          char XBeeATRqCmd[3]; // Buffer to store AT Command in Remote AT command Request, last byte always zero
+  40          char XBeeATRqParameter[21]; // Nax number of bytes is 20 (NI command)
+  41          //char XBeeATRqStatus; // Status of Remote AT command request
+  42          char XBeeATRqParamLength = 0; // length of parameter
+  43          
+  44          unsigned char XBeeRxHeaderPtr = 0;
+  45          unsigned char XBeeRxFrameType = 0; // shared
+  46          unsigned char XBeeRxPayloadLength = 0;
+  47          unsigned char XBeeRxPayloadPtr = 0;
+  48          unsigned char XBeeRxChecksum = 0;
+  49          unsigned char XBeeRxSeqNum = 0; // shared
+  50          unsigned char XBeeRxPrevSeqNum = 0; // shared
+  51          unsigned char XBeePacketReceived = 0; // shared
+  52          
+  53          #define XBeeWritePayloadData(a) XBeeTxPayload[XBeeTxData++] = a
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 2   
+
+  54          #define FlushXBeeTx() {XBeeTxData = 0;}
+  55          
+  56          extern char* UART1_rx;
+  57          extern short UART1_rx_size;
+  58          extern short UART1_rx_uart;
+  59          extern short UART1_rx_available;
+  60          extern short UART1_tx_available;
+  61          
+  62          //-----------------------------------------------------------------------------
+  63          // UART1_RX_Push
+  64          //-----------------------------------------------------------------------------
+  65          //
+  66          // This routine pushes a data into the UART RX_buffer
+  67          // Use for preserving data while checking for the expected next byte
+  68          //-----------------------------------------------------------------------------
+  69          
+  70          void UART1_RX_Push(char rx_data) {
+  71   1        if (UART1_rx_available < UART1_rx_size) {
+  72   2          // data will be loaded in SBUF0 if
+  73   2          // RI1 == 0 && (SM20 == 1 => StopBit == 1)
+  74   2          UART1_rx[UART1_rx_uart] = rx_data; //Push UART1 Data Buffer
+  75   2          ++UART1_rx_uart;
+  76   2          if (UART1_rx_uart == UART1_rx_size)
+  77   2            UART1_rx_uart = 0;
+  78   2          ++UART1_rx_available;
+  79   2        }
+  80   1      }
+  81          
+  82          //-----------------------------------------------------------------------------
+  83          // UART1_Check_Tx
+  84          //-----------------------------------------------------------------------------
+  85          //
+  86          // This routine returns the number of bytes waiting for transmission
+  87          //-----------------------------------------------------------------------------
+  88          short UART1_Check_Tx(void) {
+  89   1        char EIE2_SAVE = EIE2;
+  90   1        short bytes_wait_tx;
+  91   1      
+  92   1        EIE2 &= 0xBF; //disable interrupts
+  93   1      
+  94   1        bytes_wait_tx = UART1_tx_available;
+  95   1      
+  96   1        // re-enable if necessary
+  97   1        EIE2 = EIE2_SAVE;
+  98   1      
+  99   1        return bytes_wait_tx;
+ 100   1      
+ 101   1      }
+ 102          
+ 103          void ATCmd_Init() {
+ 104   1        memset(XBeeATRqCmdResponse, 0, sizeof XBeeATRqCmdResponse);
+ 105   1        memset(XBeeATRqCmd, 0, sizeof XBeeATRqCmd);
+ 106   1      
+ 107   1      }
+ 108          
+ 109          char ATcheckOK(short timeout) {
+ 110   1      ///////////////////////////// Check for 'OK' while preserving RX bytes received after '+++'  /////////////
+             -///////////////////////////
+ 111   1        char success = 0;
+ 112   1        unsigned char char_count = 0;
+ 113   1        char ack[3];
+ 114   1        unsigned char i;
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 3   
+
+ 115   1      
+ 116   1        unsigned short now;
+ 117   1        unsigned short delta = 0;
+ 118   1        i = ATModePreserveRxLength;
+ 119   1        now = Timertask_getClock_Override();
+ 120   1        while (delta <= timeout) { // wait for at most 2.5 seconds
+ 121   2          if (Uart_pollChars(XBEE_UART, ack, 3)) {
+ 122   3            success = 1;
+ 123   3            success &= ack[0] == 'O';
+ 124   3            success &= ack[1] == 'K';
+ 125   3            success &= ack[2] == '\r';
+ 126   3            if (success) {
+ 127   4              Uart_advance(XBEE_UART, 3);
+ 128   4              break;
+ 129   4            } else {
+ 130   4              ATModePreserveRXBuffer[i++] = ack[0]; // save character
+ 131   4              Uart_advance(XBEE_UART, 1);
+ 132   4            }
+ 133   3          }
+ 134   2          delta = Timertask_getClock_Override() - now;
+ 135   2          Delay_us(20);
+ 136   2        }
+ 137   1        if (!success) {
+ 138   2          while (Uart_pollChars(XBEE_UART, ack, 1)) {
+ 139   3            ATModePreserveRXBuffer[i++] = ack[0]; // save character
+ 140   3            Uart_advance(XBEE_UART, 1);
+ 141   3          }
+ 142   2        }
+ 143   1      
+ 144   1        ATModePreserveRXBuffer[i] = 0; //clear character to check next
+ 145   1        ATModePreserveRxLength = i;
+ 146   1      ///////////////////////////// End of Check for 'Ok' ////////////////////////////////////////
+ 147   1        return success;
+ 148   1      }
+ 149          /////////////////////////////////////// AT Command Mode Functions ////////////////////////////////////////
+             -/////////////
+ 150          //-----------------------------------------------------------------------------
+ 151          // Function:        void char ATCmdModeEnter (void)
+ 152          // PreCondition:    none
+ 153          // Input:           none
+ 154          // Output:          g_uc_XBee_AT_Mode_flag is set to 1 if successful,
+ 155          //                  g_uc_XBee_AT_Mode_flag is set to 0 if not.
+ 156          // Overview:        This function will enters the AT command mode of the XBee Module
+ 157          //                  WARNING! ENTERING AT COMMAND MODE WILL CLEAR RX1 BUFFER AFTER 1 SECOND IF THERE ARE ST
+             -ILL UNREAD DATA LEFT IN RX_BUFFER! UNREAD DATA IN RX_BUFFER WILL BE DISCARDED!
+ 158          //-----------------------------------------------------------------------------
+ 159          
+ 160          char ATCmdModeEnter(void) {
+ 161   1        unsigned char dummy;
+ 162   1      //  unsigned char char_count = 0;
+ 163   1        unsigned char i;
+ 164   1        char EIE2_SAVE;
+ 165   1        char success;
+ 166   1      
+ 167   1        while (UART1_Check_Tx())
+ 168   1          ; // IMPT! let all bytes waiting to transmit before guard time, else they may all transmit together af
+             -ter buffering
+ 169   1      
+ 170   1        Delay_blockMs(g_us_AT_mode_guard_time);
+ 171   1      
+ 172   1        //////////////////// Save any data in rx_buffer (will preserve up to 256 bytes of data) ////////////////
+             -/////////
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 4   
+
+ 173   1        // IMPT: REMEMBER TO CALL ATCmdModeExit to pop back data!!!!
+ 174   1        i = ATModePreserveRxLength;
+ 175   1        ATModePreserveRXBuffer[0] = 0; //clear character to check
+ 176   1        while (Uart_pollChars(XBEE_UART, &dummy, 1)) {
+ 177   2          Uart_advance(XBEE_UART, 1);
+ 178   2          ATModePreserveRXBuffer[i++] = dummy; // save character
+ 179   2        }
+ 180   1        ATModePreserveRxLength = i;
+ 181   1        ATModePreserveRXBuffer[i] = 0; //clear character to check next
+ 182   1        ////////////////////////////////////////////////////////////////////////////////////////////////////////
+             -//////////
+ 183   1        Uart_putChars(XBEE_UART, "+++", 3);
+ 184   1        Delay_blockMs(g_us_AT_mode_guard_time); // default guard time is 1 second, will change to lower value af
+             -ter initialization
+ 185   1      
+ 186   1        success = ATcheckOK(2500);
+ 187   1      
+ 188   1        // Set global flag if successful
+ 189   1        if (success) {
+ 190   2          g_uc_XBee_AT_Mode_flag = 1;
+ 191   2        } else {
+ 192   2          g_uc_XBee_AT_Mode_flag = 0;
+ 193   2          EIE2_SAVE = EIE2;
+ 194   2          //Set ES2 to disable UART1 interrupt (Only UART1_tx_available is modified in UART1 ISR)
+ 195   2          EIE2 &= 0xBF;
+ 196   2          // IMPT! put back data in rx buffer, if failure to enter AT cmd mode
+ 197   2          for (i = 0; i < ATModePreserveRxLength; i++) {
+ 198   3            UART1_RX_Push(ATModePreserveRXBuffer[i]);
+ 199   3          }
+ 200   2          // Reset the length
+ 201   2          ATModePreserveRxLength = 0;
+ 202   2          // re-enable if necessary
+ 203   2          EIE2 = EIE2_SAVE;
+ 204   2        }
+ 205   1        return success;
+ 206   1      }
+ 207          
+ 208          //-----------------------------------------------------------------------------
+ 209          // Function:        void ATCmdModeExit (void)
+ 210          // PreCondition:    none
+ 211          // Input:           none
+ 212          // Output:          none
+ 213          // Overview:        This function will exit the AT command mode of the XBee Module
+ 214          //-----------------------------------------------------------------------------
+ 215          
+ 216          void ATCmdModeExit(void) {
+ 217   1      //  char success; // number of characters + 1 more to account for null character
+ 218   1        unsigned char j;
+ 219   1        char EIE2_SAVE;
+ 220   1      
+ 221   1        if (g_uc_XBee_AT_Mode_flag) { // test if XBee is in AT Mode
+ 222   2          Uart_putChars(XBEE_UART, "ATCN\r", 5); // AT Command to exit command mode
+ 223   2          ATcheckOK(10000);
+ 224   2          g_uc_XBee_AT_Mode_flag = 0;
+ 225   2          EIE2_SAVE = EIE2;
+ 226   2          //Set ES2 to disable UART1 interrupt (Only UART1_tx_available is modified in UART1 ISR)
+ 227   2          EIE2 &= 0xBF;
+ 228   2          // IMPT! put back data in rx buffer
+ 229   2          for (j = 0; j < ATModePreserveRxLength; j++) {
+ 230   3            UART1_RX_Push(ATModePreserveRXBuffer[j]);
+ 231   3          }
+ 232   2          // Reset the length
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 5   
+
+ 233   2          ATModePreserveRxLength = 0;
+ 234   2          // re-enable interrupt if necessary
+ 235   2          EIE2 = EIE2_SAVE;
+ 236   2        }
+ 237   1        // FIXME return  g_uc_XBee_AT_Mode_flag
+ 238   1      }
+ 239          
+ 240          //-----------------------------------------------------------------------------
+ 241          // Function:        unsigned char ATCmdWrite (unsigned char *cmdBuffer, unsigned char *paramBuffer)
+ 242          // PreCondition:    none
+ 243          // Input:           cmdBuffer: pointer to AT command string,
+ 244          //                  paramBuffer: pointer to parameter buffer to write (buffer in string format)
+ 245          // Output:          return 1 if successful, 0 if not.
+ 246          // Overview:        This function will issues an AT command write to the XBee Module
+ 247          // Note:            RF module must be in AT command mode!
+ 248          //-----------------------------------------------------------------------------
+ 249          // TODO: (optional) include lookup table to list of AT commands so that the length of the parameter to wri
+             -te to does not have to be specified.
+ 250          
+ 251          unsigned char ATCmdWrite(unsigned char *cmdBuffer, unsigned char *paramBuffer) {
+ 252   1        unsigned char buffer[4]; // number of characters + 1 more to account for null character
+ 253   1        unsigned char char_count = 0;
+ 254   1        memset(buffer, 0, sizeof buffer);
+ 255   1        if (g_uc_XBee_AT_Mode_flag) { // test if XBee is in AT Mode
+ 256   2          // sprintf(target,"AT%s %s\r",cmdBuffer,paramBuffer); // TODO
+ 257   2          Uart_putChars(XBEE_UART, "AT", 2);
+ 258   2          Uart_putChars(XBEE_UART, cmdBuffer, strlen(cmdBuffer)); // Print Command
+ 259   2          Uart_putChars(XBEE_UART, " ", 1);
+ 260   2          Uart_putChars(XBEE_UART, paramBuffer, strlen(paramBuffer)); // Print Command
+ 261   2          Uart_putChars(XBEE_UART, "\r", 1); // Carriage Return
+ 262   2      
+ 263   2          // FIXME make a #define for 2
+ 264   2          Mccif_appendChars(2, cmdBuffer, strlen(cmdBuffer));
+ 265   2          Mccif_appendChars(2, paramBuffer, strlen(paramBuffer));
+ 266   2          Mccif_appendChars(2, "\r\n", 2);
+ 267   2      
+ 268   2          char_count = Uart1GetString(buffer, 3); // get the 'OK\r' confirmation from XBee
+ 269   2      
+ 270   2          if (char_count > 0 && strcmp(buffer, "OK\r") == 0)
+ 271   2            return 1;
+ 272   2        }
+ 273   1        return 0;
+ 274   1      }
+ 275          
+ 276          //-----------------------------------------------------------------------------
+ 277          // Function:        unsigned char ATCmdRead (unsigned char *cmdBuffer, unsigned char *parameterBuffer, uns
+             -igned char paramBufferLength)
+ 278          // PreCondition:    none
+ 279          // Input:           cmdBuffer: buffer to command stream, parameterBuffer: buffer to store read parameters
+ 280          //                  paramBufferLength = no of characters of parameter (discounting the '\r')
+ 281          // Output:          return length of paramBuffer filled up (> 0) if successful, 0 if not.
+ 282          // Overview:        This function will issues an AT command mode to the XBee Module
+ 283          //                  CAVEAT!!!: cannot be used to query ND command which returns multiple lines!!!!
+ 284          // Note:            RF module must be in AT command mode!
+ 285          //-----------------------------------------------------------------------------
+ 286          // TODO: (optional) include lookup table to list of AT commands so that the length of the parameter to wri
+             -te to does not have to be specified.
+ 287          
+ 288          unsigned char ATCmdRead(unsigned char *cmdBuffer, unsigned char* paramBuffer, unsigned char paramBufferLen
+             -gth) {
+ 289   1        unsigned char buffer = 0;
+ 290   1        unsigned char count = 0;
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 6   
+
+ 291   1        if (g_uc_XBee_AT_Mode_flag) { // test if XBee is in AT Mode
+ 292   2          Uart_putChars(XBEE_UART, "AT", 2);
+ 293   2          Uart_putChars(XBEE_UART, cmdBuffer, strlen(cmdBuffer)); // Print Command
+ 294   2          Uart_putChars(XBEE_UART, "\r", 1); // Carriage Return
+ 295   2      
+ 296   2          Mccif_appendChars(2, cmdBuffer, strlen(cmdBuffer));
+ 297   2      //    Mccif_appendChars(2, paramBuffer, strlen(paramBuffer)); // TODO jans
+ 298   2          Mccif_appendChars(2, "\r\n", 2);
+ 299   2      
+ 300   2          count = Uart1GetString(paramBuffer, paramBufferLength);
+ 301   2          if (count > 0) {
+ 302   3            if (paramBuffer[count - 1] == '\r') {
+ 303   4              paramBuffer[count - 1] = '\0'; //assign null byte if buffer return is shorter than expected
+ 304   4              count--;
+ 305   4              return count;
+ 306   4            } else {
+ 307   4              //Get the carriage return
+ 308   4              buffer = Uart1Get();
+ 309   4              if (buffer == '\r')
+ 310   4                return count;
+ 311   4              else
+ 312   4                return 0;
+ 313   4            }
+ 314   3          }
+ 315   2        }
+ 316   1        return 0; // Something wrong with paramBuffer or paramBufferLength
+ 317   1      }
+ 318          
+ 319          //////////////////////// end of AT command mode commands /////////////////////////////////////////////////
+             -////
+ 320          
+ 321          //-----------------------------------------------------------------------------
+ 322          // Function:        unsigned char XBeeATDataReceive(void)
+ 323          // PreCondition:    none
+ 324          // Input:           none
+ 325          // Output:          returns the number of bytes received in this run
+ 326          // Overview:        This function will check if there is any RF data which conforms to the AT mode packet 
+             -structure
+ 327          //                  and will set XBeePacketReceived = 1 if yes. IMPT: XBeePacketReceived must be cleared i
+             -n order to process the next received packet
+ 328          //-----------------------------------------------------------------------------
+ 329          unsigned char XBeeATDataReceive(void) {
+ 330   1        char message;
+ 331   1        char length;
+ 332   1        char bytes_received;
+ 333   1        bytes_received = 0;
+ 334   1        while (Uart_pollChars(XBEE_UART, &message, 1)) { // while data is available
+ 335   2          Mccif_appendChars(1, &message, 1);
+ 336   2          if (XBeeRxHeaderPtr < 3) {
+ 337   3            if (message == XBeePktDelimiter[XBeeRxHeaderPtr]) // Check delimiter
+ 338   3              XBeeRxHeaderPtr++; //advance packet pointer
+ 339   3            else
+ 340   3              XBeeRxHeaderPtr = 0; //reset packet pointer
+ 341   3          } else if (XBeeRxHeaderPtr == 3) {
+ 342   3            // Check if packet is from the other Sat(P or N-Sat) (kinda lame with only 2 Sats but still check)
+ 343   3            if (message == XBEE_DESTINATION_DELIMTER)
+ 344   3              XBeeRxHeaderPtr++; //advance packet pointer
+ 345   3            else
+ 346   3              XBeeRxHeaderPtr = 0; //reset packet pointer
+ 347   3          } else if (XBeeRxHeaderPtr < 7) {
+ 348   3            if (XBeePacketReceived == 0) { // Only proceed to process the next one if the last packet has been p
+             -rocessed
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 7   
+
+ 349   4              switch (XBeeRxHeaderPtr) {
+ 350   5              case 4:
+ 351   5                length = message; // Get the number of bytes between the length and checksum
+ 352   5                XBeeRxPayloadLength = length - 2;
+ 353   5                break;
+ 354   5              case 5:
+ 355   5                XBeeRxChecksum = 0; // Reset Checksum
+ 356   5                XBeeRxFrameType = message; // Get the frame type
+ 357   5                XBeeRxChecksum += message; //update checksum
+ 358   5                break;
+ 359   5              case 6:
+ 360   5                XBeeRxPrevSeqNum = XBeeRxSeqNum; // save previous sequence number
+ 361   5                XBeeRxSeqNum = message; // Get and update the sequence number
+ 362   5                XBeeRxChecksum += message; //update checksum
+ 363   5                Mccif_appendChars(1, "\r\n", 2);
+ 364   5                break;
+ 365   5              default:
+ 366   5                break;
+ 367   5              }
+ 368   4              XBeeRxHeaderPtr++; //advance packet pointer
+ 369   4            } else {
+ 370   4              // last packet not processed yet
+ 371   4              break;// break out of while loop
+ 372   4            }
+ 373   3          } else if (XBeeRxHeaderPtr == 7 && XBeeRxPayloadPtr < XBeeRxPayloadLength) {
+ 374   3            switch (XBeeRxFrameType) {
+ 375   4            case 0x10: // Transmit Request
+ 376   4              // Load the Receive Buffer
+ 377   4              XBeeRxPayload[XBeeRxPayloadPtr] = message;
+ 378   4              break;
+ 379   4            case 0x17: // Remote AT Command Request
+ 380   4              if (XBeeRxPayloadPtr < 2)
+ 381   4                // Store the AT Command
+ 382   4                XBeeATRqCmd[XBeeRxPayloadPtr] = message;
+ 383   4              else
+ 384   4                // Store the AT Command Paramters
+ 385   4                XBeeATRqParameter[XBeeRxPayloadPtr - 2] = message;
+ 386   4              break;
+ 387   4              // case 0x8B: // Acknowledgement packet (no payload)
+ 388   4            case 0x97: // Remote Command Response
+ 389   4              if (XBeeRxPayloadPtr < 2)
+ 390   4                // Store the AT Command
+ 391   4                XBeeATRqCmdResponse[XBeeRxPayloadPtr] = message;
+ 392   4              else if (XBeeRxPayloadPtr == 2)
+ 393   4                // Store the AT Command Paramters
+ 394   4                XBeeATRqParamSuccess = message;
+ 395   4              else
+ 396   4                // Store the AT Command Paramters
+ 397   4                XBeeATRqParamResponse[XBeeRxPayloadPtr - 3] = message;
+ 398   4              break;
+ 399   4            default: // undefined Frame type do nothing for the moment
+ 400   4              break;
+ 401   4            }
+ 402   3            XBeeRxChecksum += message;
+ 403   3            XBeeRxPayloadPtr++;
+ 404   3          } else if (XBeeRxHeaderPtr == 7 && XBeeRxPayloadPtr >= XBeeRxPayloadLength) {
+ 405   3            // Check the checksum, if correct flag the presence of a received packet, else just discard the data
+ 406   3            XBeeRxChecksum += message;
+ 407   3            if (XBeeRxChecksum == 0xFF) {
+ 408   4              XBeePacketReceived = 1;
+ 409   4              if (XBeeRxFrameType == 0x17) {
+ 410   5                XBeeATRqParamLength = XBeeRxPayloadPtr - 2;
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 8   
+
+ 411   5                XBeeATRqParameter[XBeeRxPayloadPtr - 2] = 0; // fill the last byte with the null character
+ 412   5              }
+ 413   4              if (XBeeRxFrameType == 0x97 && XBeeATRqParamSuccess == 1) {
+ 414   5                XBeeATRqParamResponse[XBeeRxPayloadPtr - 3] = 0; // fill the last byte with the null character
+ 415   5              }
+ 416   4            }
+ 417   3            // Reset the pointers
+ 418   3            XBeeRxHeaderPtr = 0;
+ 419   3            XBeeRxPayloadPtr = 0;
+ 420   3            // Reset Checksum
+ 421   3            XBeeRxChecksum = 0;
+ 422   3      //      UART1_advance(1); // advance the packet
+ 423   3            Uart_advance(XBEE_UART, 1); // advance the packet
+ 424   3            bytes_received++;
+ 425   3            break;
+ 426   3          }
+ 427   2      //    UART1_advance(1); // advance the packet
+ 428   2          Uart_advance(XBEE_UART, 1); // advance the packet
+ 429   2          bytes_received++;
+ 430   2        }
+ 431   1        return bytes_received;
+ 432   1      }
+ 433          
+ 434          //-----------------------------------------------------------------------------
+ 435          // Function:        void XBeeATAck(void)
+ 436          // PreCondition:    none
+ 437          // Input:           none
+ 438          // Output:          none
+ 439          // Overview:        This function will transmit an acknowledge byte
+ 440          //-----------------------------------------------------------------------------
+ 441          void XBeeATAck(void) {
+ 442   1        char XBeeTxHeader[7];
+ 443   1        char i;
+ 444   1        unsigned char checksum;
+ 445   1        // Transmit "XB-"
+ 446   1        memcpy(XBeeTxHeader, XBeePktDelimiter, 3);
+ 447   1      
+ 448   1        // Source Delimiter
+ 449   1        XBeeTxHeader[3] = XBEE_SOURCE_DELIMTER;
+ 450   1        XBeeTxHeader[4] = 2; // Length: no of bytes between length and checksum (Max. no of transmission bytes i
+             -s 84)
+ 451   1      
+ 452   1        checksum = 0;
+ 453   1        XBeeTxHeader[5] = 0x8B; // Frame ID (0x8B: ACK)
+ 454   1        checksum += XBeeTxHeader[5];
+ 455   1        XBeeTxHeader[6] = XBeeRxSeqNum; // Frame Sequence of the received packet
+ 456   1        checksum += XBeeTxHeader[6];
+ 457   1      
+ 458   1        for (i = 0; i < XBeeTxData; i++)
+ 459   1          checksum += XBeeTxPayload[i];
+ 460   1        checksum = 0xFF - checksum;
+ 461   1      
+ 462   1        Uart_putChars(XBEE_UART, XBeeTxHeader, 7);
+ 463   1        Uart_putChars(XBEE_UART, &checksum, 1);
+ 464   1        Uart_putChars(XBEE_UART, "\r", 1);
+ 465   1      
+ 466   1        // IMPT!!!! Packet dealt with, reset the packet received flag
+ 467   1        XBeePacketReceived = 0;
+ 468   1      }
+ 469          
+ 470          //-----------------------------------------------------------------------------
+ 471          // Function:        void XBeeATDataTransmit(void)
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 9   
+
+ 472          // PreCondition:    none
+ 473          // Input:           none
+ 474          // Output:          none
+ 475          // Overview:        This function will transmit the bytes in the XBeeTxPayload buffer
+ 476          //-----------------------------------------------------------------------------
+ 477          void XBeeATDataTransmit(void) {
+ 478   1        char XBeeTxHeader[7];
+ 479   1        char i;
+ 480   1        unsigned char checksum;
+ 481   1      
+ 482   1        XBeeTxSeqNum++;
+ 483   1        // Transmit "XB-"
+ 484   1        memcpy(XBeeTxHeader, XBeePktDelimiter, 3);
+ 485   1        // Source Delimiter
+ 486   1        XBeeTxHeader[3] = XBEE_SOURCE_DELIMTER;
+ 487   1        XBeeTxHeader[4] = 2 + XBeeTxData; // Length: no of bytes between length and checksum (Max. no of transmi
+             -ssion bytes is 84)
+ 488   1      
+ 489   1        checksum = 0;
+ 490   1        XBeeTxHeader[5] = 0x10; // Frame ID (0x10: Transmit Request)
+ 491   1        checksum += XBeeTxHeader[5];
+ 492   1        XBeeTxHeader[6] = XBeeTxSeqNum; // Frame Sequence
+ 493   1        checksum += XBeeTxHeader[6];
+ 494   1      
+ 495   1        for (i = 0; i < XBeeTxData; i++)
+ 496   1          checksum += XBeeTxPayload[i];
+ 497   1        checksum = 0xFF - checksum;
+ 498   1      
+ 499   1        Uart_putChars(XBEE_UART, XBeeTxHeader, 7);
+ 500   1        Uart_putChars(XBEE_UART, XBeeTxPayload, XBeeTxData);
+ 501   1        Uart_putChars(XBEE_UART, &checksum, 1);
+ 502   1        Uart_putChars(XBEE_UART, "\r", 1);
+ 503   1      }
+ 504          
+ 505          //-----------------------------------------------------------------------------
+ 506          // Function:        void XBeeRemoteATCmdRequest(unsigned char* cmd_buffer, unsigned char* param_buffer)
+ 507          // PreCondition:    none
+ 508          // Input:           cmd_buffer of length 2
+ 509          //                  param_buffer of parameter (in ASCII string terminated by null character) (max length o
+             -f 21 bytes including null character)
+ 510          //                  Set param_buffer to empty buffer '\0' if reading, else set it to the string you want t
+             -o write
+ 511          // Output:          none
+ 512          // Overview:        This function will transmit the bytes in the XBeeTxPayload buffer
+ 513          //-----------------------------------------------------------------------------
+ 514          void XBeeRemoteATCmdRequest(unsigned char* cmd_buffer, unsigned char* param_buffer) {
+ 515   1        char XBeeTxHeader[7];
+ 516   1        char i = 0;
+ 517   1        unsigned char checksum;
+ 518   1        unsigned char param_length = 0;
+ 519   1        checksum |= (1 << 6);
+ 520   1      
+ 521   1        XBeeTxSeqNum++;
+ 522   1        // Transmit "XB-"
+ 523   1        memcpy(XBeeTxHeader, XBeePktDelimiter, 3);
+ 524   1        // Source Delimiter
+ 525   1        XBeeTxHeader[3] = XBEE_SOURCE_DELIMTER;
+ 526   1      
+ 527   1        checksum = 0;
+ 528   1        XBeeTxHeader[5] = 0x17; // Frame ID (0x17: Remote AT Command Request)
+ 529   1        checksum += XBeeTxHeader[5];
+ 530   1        XBeeTxHeader[6] = XBeeTxSeqNum; // Frame Sequence
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 10  
+
+ 531   1        checksum += XBeeTxHeader[6];
+ 532   1      
+ 533   1        for (i = 0; i < 2; i++)
+ 534   1          checksum += cmd_buffer[i];
+ 535   1        i = 0;
+ 536   1      
+ 537   1        while (param_buffer[i] && i < 21) { //  test for null character at end of array
+ 538   2          checksum += param_buffer[i];
+ 539   2          i++;
+ 540   2        }
+ 541   1      
+ 542   1        if (param_buffer[i])
+ 543   1          param_buffer[i] = 0; //set last byte to be null if it is not , will handle case if length of param_buf
+             -fer is longer than 20
+ 544   1      
+ 545   1        XBeeTxHeader[4] = 4 + i; // Length: no of bytes between length and checksum (Max. no of transmission byt
+             -es is 84)
+ 546   1      
+ 547   1        checksum = 0xFF - checksum;
+ 548   1      
+ 549   1        Uart_putChars(XBEE_UART, XBeeTxHeader, sizeof XBeeTxHeader);
+ 550   1        Uart_putChars(XBEE_UART, cmd_buffer, 2);
+ 551   1        Uart_putChars(XBEE_UART, param_buffer, strlen(param_buffer));
+ 552   1        Uart_putChars(XBEE_UART, &checksum, 1);
+ 553   1        Uart_putChars(XBEE_UART, "\r", 1);
+ 554   1      
+ 555   1        Mccif_appendChars(2, XBeeTxHeader, 7);
+ 556   1        Mccif_appendChars(2, cmd_buffer, 2);
+ 557   1        Mccif_appendChars(2, param_buffer, strlen(param_buffer));
+ 558   1        Mccif_appendChars(2, "\r\n", 2);
+ 559   1      }
+ 560          
+ 561          //-----------------------------------------------------------------------------
+ 562          // Function:        void XBeeRemoteATCmdRqHandler(void)
+ 563          // PreCondition:    none
+ 564          // Input:           none
+ 565          // Output:          none
+ 566          // Overview:        This function will handle the Remote AT Command Request with the Remote Command Respon
+             -se
+ 567          //-----------------------------------------------------------------------------
+ 568          void XBeeRemoteATCmdRqHandler(void) {
+ 569   1        char XBeeTxHeader[7];
+ 570   1        char i;
+ 571   1        unsigned char checksum;
+ 572   1        unsigned char count = 0;
+ 573   1        unsigned char success = 0;
+ 574   1        unsigned char read_buffer[21]; // to store read buffer
+ 575   1      #ifdef XBEE_END_DEVICE
+                unsigned char j;
+              #endif
+ 578   1        memset(read_buffer, 0, sizeof read_buffer);
+ 579   1        XBeeATRqCmd[2] = 0; // clear the last byte just in case
+ 580   1      #ifdef XBEE_END_DEVICE
+                    if (XBEE_CTS_PIN == 1) {
+                      XBEE_DTR_PIN |= 1; //re-assert first for some time
+                      for (j =0; j < 250; j++);
+                    }
+                    XBEE_DTR_PIN = 0; // de-assert the DTR pin to try to wake the module
+                    // must remember to re-assert back!
+                    g_us_ms_ATCommand_timer = 0;
+                    while (XBEE_CTS_PIN == 1 && g_us_ms_ATCommand_timer < 3000);// Check CTS for at most 3 seconds
+                    if (XBEE_CTS_PIN == 0) {
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 11  
+
+              #endif
+ 591   1        ATCmdModeEnter(); // Enter AT command mode
+ 592   1        if (g_uc_XBee_AT_Mode_flag == 1) { // AT command mode was entered into successfully
+ 593   2          if (XBeeATRqParamLength == 0) {
+ 594   3            // It is a read request, return the read_buffer
+ 595   3            count = ATCmdRead(XBeeATRqCmd, read_buffer, 21);
+ 596   3            if (count > 0 && strcmp(read_buffer, "ERROR") != 0) {
+ 597   4              success = 1;
+ 598   4            } else {
+ 599   4              success = 0;
+ 600   4              count = 0;
+ 601   4              memset(read_buffer, 0, sizeof read_buffer);
+ 602   4            }
+ 603   3          } else {
+ 604   3            // It is a write request, just send back if write successful or not
+ 605   3            success = ATCmdWrite(XBeeATRqCmd, XBeeATRqParameter);
+ 606   3          }
+ 607   2          ATCmdModeExit(); // Must remember to exit AT command mode
+ 608   2        }
+ 609   1      
+ 610   1        ///////////// Transmit Remote Command Response //////////////////
+ 611   1        // Transmit "XB-"
+ 612   1        memcpy(XBeeTxHeader, XBeePktDelimiter, 3);
+ 613   1        // Source Delimiter
+ 614   1        XBeeTxHeader[3] = XBEE_SOURCE_DELIMTER;
+ 615   1      
+ 616   1        checksum = 0;
+ 617   1        XBeeTxHeader[5] = 0x97; // Frame ID (0x17: Remote AT Command Request)
+ 618   1        checksum += XBeeTxHeader[5];
+ 619   1        XBeeTxHeader[6] = XBeeRxSeqNum; // Frame Sequence
+ 620   1        checksum += XBeeTxHeader[6];
+ 621   1      
+ 622   1        for (i = 0; i < 2; i++)
+ 623   1          checksum += XBeeATRqCmd[i];
+ 624   1      
+ 625   1        checksum += success;
+ 626   1      
+ 627   1        for (i = 0; i < count; i++)
+ 628   1          checksum += read_buffer[i];
+ 629   1      
+ 630   1        checksum = 0xFF - checksum;
+ 631   1      
+ 632   1        XBeeTxHeader[4] = 5 + count; // Length: no of bytes between length and checksum (Max. no of transmission
+             - bytes is 84)
+ 633   1      
+ 634   1        Uart_putChars(XBEE_UART, XBeeTxHeader, sizeof XBeeTxHeader);
+ 635   1        Uart_putChars(XBEE_UART, XBeeATRqCmd, 2);
+ 636   1        Uart_putChars(XBEE_UART, &success, 1);
+ 637   1      
+ 638   1        Uart_putChars(XBEE_UART, read_buffer, strlen(read_buffer));
+ 639   1      
+ 640   1        Uart_putChars(XBEE_UART, &checksum, 1);
+ 641   1        Uart_putChars(XBEE_UART, "\r", 1);
+ 642   1      
+ 643   1        // IMPT!!!! Packet dealt with, reset the packet received flag
+ 644   1        XBeePacketReceived = 0;
+ 645   1      
+ 646   1      #ifdef XBEE_END_DEVICE
+              }
+              XBEE_DTR_PIN = 1; // re-assert the DTR pin back
+              #endif
+ 650   1      
+C51 COMPILER V9.02   XBEE_ATCMD                                                            12/28/2012 13:46:35 PAGE 12  
+
+ 651   1      }
+ 652          
+ 653          //-----------------------------------------------------------------------------
+ 654          // Function:        void XBeeWriteStringPayload(unsigned char* str)
+ 655          // PreCondition:    none
+ 656          // Input:           pointer to str buffer (terminated by null character) to put into XBeeTxPayload
+ 657          // Output:          none
+ 658          // Overview:        This function will load the string buffer str into the XBeeTxPayload for transmission
+ 659          //                  Will flush out the XBeeTxPayload before loading the str buffer
+ 660          //-----------------------------------------------------------------------------
+ 661          void XBeeWriteStringPayload(unsigned char* str) {
+ 662   1        char c;
+ 663   1        FlushXBeeTx()
+ 664   1        ;
+ 665   1        c = *str++;
+ 666   1        while (c) { //  test for null character at end of array
+ 667   2          XBeeWritePayloadData(c);
+ 668   2          c = *str++;
+ 669   2        }
+ 670   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   3994    ----
+   CONSTANT SIZE    =     30    ----
+   XDATA SIZE       =    586    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

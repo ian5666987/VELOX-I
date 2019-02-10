@@ -1,0 +1,71 @@
+C51 COMPILER V9.02   VELOX_WATCHDOG                                                        05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_WATCHDOG
+OBJECT MODULE PLACED IN Velox_watchdog.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_watchdog.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "c8051_watchdog.h"
+   6          
+   7          // private variables
+   8          volatile unsigned char watchdog_IE = 0;
+   9          volatile short watchdog_count = 0; // increases by one at a rate of about 1 ms
+  10          volatile short watchdog_limit = 10000;
+  11          // ---
+  12          // watchdog_max is just for monitoring purposes and not part of the watchdog mechanism
+  13          volatile short watchdog_max = 0;
+  14          
+  15          // confirmAlive should be invoked from the main loop
+  16          void Watchdog_confirmAlive() {
+  17   1        IE &= ~watchdog_IE;
+  18   1        if (watchdog_max < watchdog_count)
+  19   1          watchdog_max = watchdog_count;
+  20   1        watchdog_count = 0;
+  21   1        IE |= watchdog_IE;
+  22   1      }
+  23          
+  24          // change in behavior
+  25          void Watchdog_advancedInit(unsigned char mask, short limit) {
+  26   1        watchdog_IE = mask;
+  27   1        watchdog_limit = limit;
+  28   1        Watchdog_confirmAlive();
+  29   1        Watchdog_init(); // Initializes WDT
+  30   1      }
+  31          
+  32          // interruptCallback should be called in the interrupt (about once every ms)
+  33          void Watchdog_interruptCallback() {
+  34   1        if (watchdog_count <= watchdog_limit) {
+  35   2          Watchdog_resetTimer();
+  36   2          ++watchdog_count;
+  37   2        }
+  38   1      }
+  39          
+  40          short Watchdog_getMaxCount() {
+  41   1        short value;
+  42   1        IE &= ~watchdog_IE;
+  43   1        value = watchdog_max;
+  44   1        IE |= watchdog_IE;
+  45   1        return value;
+  46   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    210    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     12    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+C51 COMPILER V9.02   VELOX_WATCHDOG                                                        05/20/2014 11:03:53 PAGE 2   
+
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

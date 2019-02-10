@@ -1,0 +1,193 @@
+C51 COMPILER V9.02   C8051_EEPROM                                                          12/28/2012 13:46:34 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_EEPROM
+OBJECT MODULE PLACED IN C8051_eeprom.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_eeprom.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          
+   5          #include "C8051_eeprom.h"
+   6          #include "C8051_delay.h"
+   7          
+   8          // Parameters   : 1. address - the destination EEPROM address
+   9          //                   range: 0 to EEPROM_CAPACITY
+  10          //                2. value - the value to write.
+  11          //                   range: 0x00 to 0xFF
+  12          //
+  13          // Writes one byte to the specified address in the EEPROM. This function polls
+  14          // the EEPROM status register after the write operation, and returns only after
+  15          // the status register indicates that the write cycle is complete. This is to
+  16          // prevent from having to check the status register before a read operation.
+  17          // This function saves and restores SFRPAGE.
+  18          char EEPROM_Write(long p_l_address, char p_c_value) {
+  19   1        //Save Current SFR page
+  20   1        char success = 1;
+  21   1        char SFRPAGE_SAVE = SFRPAGE;
+  22   1        unsigned short l_us_eeprom_WIP_delay;
+  23   1        SFRPAGE = SPI0_PAGE;
+  24   1      
+  25   1        //assume EEPROM no fail when first initiating transfer
+  26   1        //Writing a byte to the EEPROM is a five-step operation.
+  27   1      
+  28   1        //Step 1: Set the Write Enable Latch to 1
+  29   1        NSSMD0 = 0; // Step1.1: Activate Slave Select
+  30   1        SPI0DAT = EEPROM_CMD_WREN; // Step1.2: Send the WREN command
+  31   1        success &= EEPROM_SPIF(); // Step1.3: Wait for end of transfer
+  32   1        SPIF = 0; // Step1.4: Clear the SPI intr. flag
+  33   1        NSSMD0 = 1; // Step1.5: Deactivate Slave Select
+  34   1        Delay_us(1); // Step1.6: Wait for at least T_NSS_DISABLE_MIN
+  35   1      
+  36   1        //Step 2: Send the WRITE command
+  37   1        NSSMD0 = 0;
+  38   1        SPI0DAT = EEPROM_CMD_WRITE;
+  39   1        success &= EEPROM_SPIF();
+  40   1        SPIF = 0;
+  41   1      
+  42   1        //Step 3: Send the EEPROM destination address (MSB first)
+  43   1        SPI0DAT = p_l_address >> 16;
+  44   1        success &= EEPROM_SPIF();
+  45   1        SPIF = 0;
+  46   1        SPI0DAT = p_l_address >> 8;
+  47   1        success &= EEPROM_SPIF();
+  48   1        SPIF = 0;
+  49   1        SPI0DAT = p_l_address;
+  50   1        success &= EEPROM_SPIF();
+  51   1        SPIF = 0;
+  52   1      
+  53   1        //Step 4: Send the value to write
+  54   1        SPI0DAT = p_c_value;
+  55   1        success &= EEPROM_SPIF();
+C51 COMPILER V9.02   C8051_EEPROM                                                          12/28/2012 13:46:34 PAGE 2   
+
+  56   1        SPIF = 0;
+  57   1        NSSMD0 = 1; //deactivate slave select
+  58   1        Delay_us(1);
+  59   1      
+  60   1        //Step5: Poll on the Write In Progress (WIP) bit in Read Status Register
+  61   1        l_us_eeprom_WIP_delay = 0;
+  62   1        do {
+  63   2          NSSMD0 = 0; // Activate Slave Select
+  64   2          SPI0DAT = EEPROM_CMD_RDSR; // Send the Read Status Register command
+  65   2          success &= EEPROM_SPIF(); // Wait for the command to be sent out
+  66   2          SPIF = 0;
+  67   2          SPI0DAT = 0; // Dummy write to output serial clock
+  68   2          success &= EEPROM_SPIF(); // Wait for the register to be read
+  69   2          SPIF = 0;
+  70   2          NSSMD0 = 1; // Deactivate Slave Select after read
+  71   2      
+  72   2          l_us_eeprom_WIP_delay++;
+  73   2          if (l_us_eeprom_WIP_delay > EEPROM_RW_WIP_TIMEOUT) {
+  74   3            success = 0;
+  75   3            break;
+  76   3          }
+  77   2      
+  78   2        } while ((SPI0DAT & 0x01) == 0x01);
+  79   1        SFRPAGE = SFRPAGE_SAVE;
+  80   1        return success;
+  81   1      }
+  82          
+  83          // Parameters   : 1. address - the source EEPROM address.
+  84          //                   range: 0 to EEPROM_CAPACITY
+  85          // Return Value : The value that was read from the EEPROM
+  86          //                   range: 0x00 to 0xFF
+  87          //
+  88          // Reads one byte from the specified EEPROM address.
+  89          // This function saves and restores SFRPAGE.
+  90          char EEPROM_Read(long p_ul_address) {
+  91   1        char l_uc_value;
+  92   1      
+  93   1        char SFRPAGE_SAVE = SFRPAGE;
+  94   1        SFRPAGE = SPI0_PAGE;
+  95   1      
+  96   1        //Reading a byte from the EEPROM is a three-step operation
+  97   1        //Step 1: Send the READ command
+  98   1        NSSMD0 = 0; // Activate Slave Select
+  99   1        SPI0DAT = EEPROM_CMD_READ;
+ 100   1        EEPROM_SPIF(); // TODO use return value to assign error status
+ 101   1        SPIF = 0;
+ 102   1      
+ 103   1        //Step 2: Send the EEPROM source address (MSB first)
+ 104   1        SPI0DAT = (p_ul_address >> 16);
+ 105   1        EEPROM_SPIF();
+ 106   1        SPIF = 0;
+ 107   1      
+ 108   1        SPI0DAT = (p_ul_address >> 8);
+ 109   1        EEPROM_SPIF();
+ 110   1        SPIF = 0;
+ 111   1      
+ 112   1        SPI0DAT = p_ul_address;
+ 113   1        EEPROM_SPIF();
+ 114   1        SPIF = 0;
+ 115   1      
+ 116   1        //Step 3: Read the value returned
+ 117   1        SPI0DAT = 0; // Dummy write to output serial clock
+C51 COMPILER V9.02   C8051_EEPROM                                                          12/28/2012 13:46:34 PAGE 3   
+
+ 118   1        EEPROM_SPIF(); // Wait for the value to be read
+ 119   1        SPIF = 0;
+ 120   1        NSSMD0 = 1; // Deactivate Slave Select
+ 121   1        Delay_us(1);
+ 122   1        l_uc_value = SPI0DAT; // Store EEPROM value in local var.
+ 123   1      
+ 124   1        //Restore SFR page
+ 125   1        SFRPAGE = SFRPAGE_SAVE;
+ 126   1      
+ 127   1        return l_uc_value;
+ 128   1      }
+ 129          
+ 130          //-----------------------------------------------------------------------------
+ 131          // function: EEPROM_SPIF() used to check whether SPIF has gone to 1,
+ 132          // if after pre-defined no of tries and SPIF bit has not gone to 1, exit from loop.
+ 133          //-----------------------------------------------------------------------------
+ 134          
+ 135          char EEPROM_SPIF(void) {
+ 136   1        char SFRPAGE_SAVE = SFRPAGE;
+ 137   1        char success = 1;
+ 138   1        unsigned short l_us_eeprom_delay;
+ 139   1        //Switch to SPIO page
+ 140   1        SFRPAGE = SPI0_PAGE;
+ 141   1        l_us_eeprom_delay = 0;
+ 142   1        do {
+ 143   2          ++l_us_eeprom_delay;
+ 144   2          if (EEPROM_RW_TIMEOUT < l_us_eeprom_delay) {
+ 145   3            success = 0;
+ 146   3            break;
+ 147   3          }
+ 148   2        } while (!SPIF);
+ 149   1        SFRPAGE = SFRPAGE_SAVE;
+ 150   1        return success;
+ 151   1      }
+ 152          
+ 153          //-----------------------------------------------------------------------------
+ 154          // External Memory Configuration
+ 155          //-----------------------------------------------------------------------------
+ 156          
+ 157          void EMIF_init(void) {
+ 158   1        char SFRPAGE_SAVE = SFRPAGE;
+ 159   1        SFRPAGE = EMI0_PAGE;
+ 160   1        //Non-muxed mode; ON-CHIP ONLY
+ 161   1        EMI0CF = 0x10;
+ 162   1        //Access addresses on page 0x0000 for 8-bit XRAM moves
+ 163   1        EMI0CN = 0x00;
+ 164   1        SFRPAGE = SFRPAGE_SAVE;
+ 165   1      }
+ 166          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    557    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     20    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

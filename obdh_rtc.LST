@@ -1,0 +1,12 @@
+C51 COMPILER V9.02   OBDH_RTC                                                              07/18/2013 07:22:33 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_RTC
+OBJECT MODULE PLACED IN obdh_rtc.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_rtc.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+*** ERROR C318 OF obdh_rtc.c: can't open file 'obdh_rtc.c'
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  1 ERROR(S)

@@ -1,0 +1,62 @@
+C51 COMPILER V9.02   VELOX_SFRSTACK                                                        05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_SFRSTACK
+OBJECT MODULE PLACED IN Velox_sfrstack.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_sfrstack.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "Velox_sfrstack.h"
+   6          
+   7          char* SFR_stack;
+   8          char SFR_stackSize = 0;
+   9          char SFR_index = 0;
+  10          // ---
+  11          unsigned char SFR_maxDepth = 0;
+  12          
+  13          void SFR_init(char* stack, short stack_size) {
+  14   1        SFR_stack = stack;
+  15   1        SFR_stackSize = stack_size;
+  16   1      }
+  17          
+  18          void SFR_pushPage(char page) {
+  19   1        SFR_stack[SFR_index] = SFRPAGE;
+  20   1        if (SFR_index < SFR_stackSize - 1)
+  21   1          ++SFR_index;
+  22   1        else
+  23   1          SFR_maxDepth |= SFRSTACK_OVERRUN;
+  24   1        if (SFR_maxDepth < SFR_index)
+  25   1          SFR_maxDepth = SFR_index;
+  26   1        SFRPAGE = page;
+  27   1      }
+  28          
+  29          void SFR_popPage() {
+  30   1        if (SFR_index)
+  31   1          --SFR_index;
+  32   1        else
+  33   1          SFR_maxDepth |= SFRSTACK_UNDERRUN;
+  34   1        SFRPAGE = SFR_stack[SFR_index];
+  35   1      }
+  36          
+  37          char SFR_getMaxDepth() {
+  38   1        return SFR_maxDepth;
+  39   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    252    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     12    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

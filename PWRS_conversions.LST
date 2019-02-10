@@ -1,0 +1,35 @@
+C51 COMPILER V9.02   PWRS_CONVERSIONS                                                      12/28/2012 14:31:20 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_CONVERSIONS
+OBJECT MODULE PLACED IN PWRS_conversions.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_conversions.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "PWRS_conversions.h"
+   4          
+   5          // decode_temperature: convert raw temperature sensor readings into deg C
+   6          // intended input range according to data sheet is [292 ... 1955]
+   7          // according to LM94022 Transfer Table the sensor provides mV
+   8          float LM94022_decodeTemperature(float p_f_temp_mv) {
+   9   1        // see matlab/ folder for derivation
+  10   1        float l_f_a = -4.8164e-006, l_f_b = -0.1095, l_f_c = 233.3574;
+  11   1        return (l_f_a * p_f_temp_mv + l_f_b) * p_f_temp_mv + l_f_c;
+  12   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     79    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     16    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

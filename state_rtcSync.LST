@@ -1,0 +1,91 @@
+C51 COMPILER V9.02   STATE_RTCSYNC                                                         05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_RTCSYNC
+OBJECT MODULE PLACED IN state_rtcSync.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_rtcSync.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          //#include <stdio.h>
+   4          
+   5          #include "Velox_uptime.h"
+   6          
+   7          #include "rtc_generic.h"
+   8          #include "Velox_rtc_support.h"
+   9          
+  10          #include "obdh_constant.h"
+  11          #include "obdh_globalvariables.h"
+  12          #include "obdh_timekeeper.h"
+  13          
+  14          #include "state_util.h"
+  15          
+  16          char State_rtcSync(char* subtask) {
+  17   1        char release = 0; // default return choice: do not release state, unless specific set (see release = 1; 
+             -instruction below)
+  18   1        long absdiff;
+  19   1        switch (g_timekeeper.control) {
+  20   2        case timekeeper_setRtcThenRead:
+  21   2          if (Uptime_isTaiTimeValid()) { // do not proceed unless uptime is valid
+  22   3            Rtc_fromTai(&g_timekeeper.rtcStamp, uptime.tai_time); // set the RTC to have its TAI time
+  23   3            Rtc_setRawTime(&g_timekeeper.rtcStamp);
+  24   3            g_timekeeper.control = timekeeper_readRtc;
+  25   3          }
+  26   2          release = 1; // always release
+  27   2          break; // end of timekeeper_setRtcThenRead
+  28   2        case timekeeper_readRtc:
+  29   2        case timekeeper_readRtcAsMaster:
+  30   2          switch (*subtask) {
+  31   3          case 0: // get time from RTC
+  32   3            Rtc_obtainStampPut();
+  33   3            Timertask_setExecuteOnce(&g_stateTask, 2);
+  34   3            ++*subtask; // proceed to next subtask, state is not released
+  35   3            break;
+  36   3          case 1:
+  37   3            if (Timertask_isReady(&g_stateTask)) { // if timeout has occurred
+  38   4              if (Rtc_obtainStampGet(&g_timekeeper.rtcStamp)) { // suppose this is due to obtainRawTimePut and i
+             -f the obtainRawTimeGet is successful
+  39   5                g_timekeeper.taitime = Rtc_toTai(&g_timekeeper.rtcStamp);
+  40   5                // ---
+  41   5                if (g_timekeeper.control == timekeeper_readRtcAsMaster) {
+  42   6                  absdiff = uptime.tai_time - g_timekeeper.taitime;
+  43   6                  if (absdiff < 0L) // compute absolute value of time deviation
+  44   6                    absdiff = -absdiff;
+  45   6                  // interference with the internal clock mechanism only occurs when absolutely necessary, i.e. 
+             -more than a certain minimum deviation
+  46   6                  // and only when data can be assumed not to be corrupted, i.e. not more than a small deviation
+  47   6                  if (TAITIME_DEVIATION_MIN < absdiff && absdiff < TAITIME_DEVIATION_MAX)
+  48   6                    uptime.tai_time = g_timekeeper.taitime;
+  49   6                }
+  50   5              } else
+  51   4                ++g_timekeeper.failcount;
+  52   4              release = 1; // release state
+C51 COMPILER V9.02   STATE_RTCSYNC                                                         05/20/2014 11:03:52 PAGE 2   
+
+  53   4            }
+  54   3            break;
+  55   3          }
+  56   2          break; // end of timekeeper_readRtc
+  57   2        default:
+  58   2          release = 1;
+  59   2          break;
+  60   2        }
+  61   1        return release;
+  62   1      }
+  63          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    433    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      8    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

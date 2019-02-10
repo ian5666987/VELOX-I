@@ -1,0 +1,76 @@
+C51 COMPILER V9.02   OBDH_TRXUV                                                            05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_TRXUV
+OBJECT MODULE PLACED IN obdh_trxuv.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_trxuv.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "Velox_uptime.h"
+   4          
+   5          #include "shared_general.h"
+   6          #include "shared_pwrs.h"
+   7          
+   8          #include "comm_itc.h"
+   9          
+  10          #include "obdh_constant.h"
+  11          #include "obdh_globalvariables.h"
+  12          #include "obdh_trxuv.h"
+  13          
+  14          #define  COMM_STARTUP_DELAY_SEC    2L  // require pwrs on for 2+1=3 sec until contact
+  15          
+  16          void Trxuv_init() {
+  17   1        // generated in matlab based on time to send 1 frame of 231 B at 1200 bps in idle active mode
+  18   1        g_trxuv.delayMap[0] = 5639;
+  19   1        g_trxuv.delayMap[1] = 3527;
+  20   1        g_trxuv.delayMap[2] = 2539;
+  21   1        g_trxuv.delayMap[3] = 1409;
+  22   1        g_trxuv.delayMap[4] = STATE_DONWLINK_DELAY_MIN;
+  23   1        g_trxuv.autoIdleActive = 1; // automatic as default, since downlink is efficient that way, and no additi
+             -onal handling from gnd station is required
+  24   1        g_trxuv.rateAx25 = 0; // this is reset to 0, until gnd station decides otherwise
+  25   1        g_trxuv.rateCW = 100; // default is overwritten by manifest //ian 20131024: set 100 as default after mee
+             -ting on 20131021 (20 is too fast!)
+  26   1        // comm is reset every 16 minutes. don't increase this value, since comm might continue to send and then
+             - use a lot of power!
+  27   1        g_trxuv.runtime.delay = 960; // 60 * 16 == 960 i.e. 16 minutes, stored in eeprom/SD card, so that when c
+             -omm is found to be stable during the mission duration can be extended
+  28   1        Runtime_fromNow(&g_trxuv.runtime);
+  29   1      }
+  30          
+  31          char Trxuv_isAvailable() {
+  32   1        return g_c_byPassPowerCheckOnComm ? COMM_STARTUP_DELAY_SEC < uptime.session : (g_us_obdh_channel_status 
+             -& CHANNEL_MASK_COMM) && (COMM_STARTUP_DELAY_SEC < uptime.session);
+  33   1      }
+  34          
+  35          char Trxuv_isIdleActive() {
+  36   1        return g_itc.tx_status & COMM_IDLE_STATUS_MASK;
+  37   1      }
+  38          
+  39          // returns 1 2 3 4, as effective speedup (not physical)
+  40          char Trxuv_getTxRateFactor() {
+  41   1        unsigned char mask;
+  42   1        mask = g_itc.tx_status & COMM_TX_RATE_MASK;
+  43   1        mask >>= 2;
+  44   1        return mask + 1; // TODO formula is subject to testing
+  45   1      }
+  46          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    237    ----
+C51 COMPILER V9.02   OBDH_TRXUV                                                            05/20/2014 11:03:52 PAGE 2   
+
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      1    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

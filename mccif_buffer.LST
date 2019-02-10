@@ -1,0 +1,73 @@
+C51 COMPILER V9.02   MCCIF_BUFFER                                                          05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE MCCIF_BUFFER
+OBJECT MODULE PLACED IN mccif_buffer.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE mccif_buffer.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "mccif_stream.h"
+   4          #include "mccif_buffer.h"
+   5          
+   6          char* mccif_buffer = 0;
+   7          char mccif_buffer_index = 0;
+   8          short mccif_buffer_count = 0;
+   9          short mccif_buffer_maxlength;
+  10          short mccif_buffer_flush;
+  11          
+  12          void Mccif_setBuffer(void* buffer, short maxlength) {
+  13   1        mccif_buffer = (char*) buffer;
+  14   1        mccif_buffer_index = 0;
+  15   1        mccif_buffer_count = 0;
+  16   1        mccif_buffer_maxlength = maxlength;
+  17   1        mccif_buffer_flush = 0;
+  18   1        Mccif_appendChars(0, 0, 0);
+  19   1      }
+  20          
+  21          void Mccif_flush() {
+  22   1        if (mccif_buffer && mccif_buffer_count) {
+  23   2          Mccif_downlinkStream(mccif_buffer_index, mccif_buffer_flush, mccif_buffer_count, mccif_buffer);
+  24   2          mccif_buffer_count = 0;
+  25   2          ++mccif_buffer_flush;
+  26   2        }
+  27   1      }
+  28          
+  29          void Mccif_appendChar(char index, char value) {
+  30   1        if (mccif_buffer) {
+  31   2          if (mccif_buffer_index != index && mccif_buffer_count)
+  32   2            Mccif_flush();
+  33   2          // ---
+  34   2          mccif_buffer_index = index;
+  35   2          mccif_buffer[mccif_buffer_count] = value;
+  36   2          ++mccif_buffer_count;
+  37   2          if (mccif_buffer_count == mccif_buffer_maxlength)
+  38   2            Mccif_flush();
+  39   2        }
+  40   1      }
+  41          
+  42          void Mccif_appendChars(char index, void* ptr, short len) {
+  43   1        short c0;
+  44   1        char* msg = (char*) ptr;
+  45   1        for (c0 = 0; c0 < len; ++c0)
+  46   1          Mccif_appendChar(index, msg[c0]);
+  47   1      }
+  48          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    474    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     28    ----
+   PDATA SIZE       =   ----    ----
+C51 COMPILER V9.02   MCCIF_BUFFER                                                          05/20/2014 11:03:51 PAGE 2   
+
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

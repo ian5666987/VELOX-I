@@ -1,0 +1,270 @@
+C51 COMPILER V9.02   PWRS_MAIN                                                             12/28/2012 23:30:42 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_MAIN
+OBJECT MODULE PLACED IN PWRS_main.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_main.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #define interrupt(x)     interrupt x
+   4          
+   5          #include <stdio.h>
+   6          #include <string.h>
+   7          #include <intrins.h>   // include for NOP and other instructions
+   8          #include <c8051f120.h>
+   9          #include "C8051_SMBus.h"
+  10          #include "C8051_adc.h"
+  11          #include "PWRS_timer.h"
+  12          #include "C8051_oscillator.h"
+  13          #include "C8051_SPI0.h"
+  14          #include "C8051_SMBusTimer3.h"
+  15          #include "C8051_pca0.h"
+  16          #include "C8051_delay.h"
+  17          #include "C8051_extern_int.h"
+  18          #include "Velox_sfrstack.h"
+  19          #include "Velox_checksum.h"
+  20          #include "Velox_timertask.h"
+  21          #include "Velox_uart.h"
+  22          #include "Velox_raid.h"
+  23          #include "Velox_delay.h"
+  24          #include "Velox_watchdog.h"
+  25          #include "Mccif_xdata.h"
+  26          #include "Mccif_buffer.h"
+  27          #include "obdh_globalvariables.h"
+  28          #include "PWRS_constant.h"
+  29          #include "PWRS_port.h"
+  30          #include "PWRS_debug.h"
+  31          #include "system_config.h"
+  32          // declaration for version dates
+  33          // TODO use __DATE__ to get date at compile time
+  34          //unsigned char xdata FW_VER_DATE[15] = "2.0/25 MAY 12 \0"; //  _at_ (pwrs_data_segment + );
+  35          
+  36          char g_c_clock_flag = 0;
+  37          unsigned char g_uc_data_backup_counter = 0;
+  38          
+  39          char sfr_buffer[24];
+  40          
+  41          char PCA0_CPM_overloadConfig() {
+  42   1        PCA0_setCPM(0, PCA0_8bitPWM_ON);
+  43   1        PCA0_setCPM(1, PCA0_8bitPWM_ON);
+  44   1        PCA0_setCPM(2, PCA0_8bitPWM_ON);
+  45   1        PCA0_setCPM(5, PCA0_8bitPWM_OFF);
+  46   1        return 0; // TODO test: oddly enough, pca interrupt used to be enabled, despite no ISR exist!
+  47   1      }
+  48          
+  49          #define UART0_RX_SIZE 512
+  50          char UART0_rx_buffer[UART0_RX_SIZE];
+  51          #define UART0_TX_SIZE 512
+  52          char UART0_tx_buffer[UART0_TX_SIZE];
+  53          
+  54          #define UART1_RX_SIZE 512
+  55          char UART1_rx_buffer[UART1_RX_SIZE];
+C51 COMPILER V9.02   PWRS_MAIN                                                             12/28/2012 23:30:42 PAGE 2   
+
+  56          #define UART1_TX_SIZE 512
+  57          char UART1_tx_buffer[UART0_TX_SIZE];
+  58          
+  59          char XBEE_BUFFER[32];
+  60          short idle_counter = 0;
+  61          //short idle_buffer[64];
+  62          
+  63          char hello[6] = "hello\0";
+  64          
+  65          unsigned short g_us_CLOCK_MS;
+  66          
+  67          //-----------------------------------------------------------------------------
+  68          //      Main Program
+  69          //-----------------------------------------------------------------------------
+  70          void main(void) {
+  71   1        long sys_clock;
+  72   1        char index = 0;
+  73   1        struct struct_timertask g_str_MAIN_LOOP_TASK;
+  74   1      
+  75   1      // Initialize the configurable parameters
+  76   1      
+  77   1        SFRPAGE = CONFIG_PAGE;
+  78   1        EN_5_ADS = 0; //Solve GPIO glitch problem on push-pull pins
+  79   1        EN_5_ACS = 0; //Solve GPIO glitch problem on push-pull pins
+  80   1        EN_5_PAYL = 0; //Solve GPIO glitch problem on push-pull pins
+  81   1        EN_5_DEPL = 0; //Solve GPIO glitch problem on push-pull pins
+  82   1        EN_COMM = 1; //Preset Comms as enabled
+  83   1        EN_3V3_PAYL = 0; //Solve GPIO glitch problem on push-pull pins
+  84   1        BATT_CTRL = 1; //Set BATT Charging at start
+  85   1        EN_SDC_1 = 1; //use SDC mode 1 at start
+  86   1        EN_SDC_2 = 0; //Solve GPIO glitch problem on push-pull pins. Ensure tied to ground
+  87   1        PWM_SEL_1 = 1; // SET MPPT mode = fixed timer IC at start
+  88   1        PWM_SEL_2 = 0; // Solve GPIO glitch problem on push-pull pins
+  89   1        OBDH_OFF_VCC = 0; //Solve GPIO glitch problem on push-pull pins. Ensure tied to ground
+  90   1        OBDH_RESET = 1; //set initial state
+  91   1        AMUX_SEL_1 = 0; //set initial state
+  92   1        AMUX_SEL_2 = 0; //set initial state
+  93   1        AMUX_SEL_3 = 0; //set initial state
+  94   1        TK_SW_2 = 1; //TK_SW_2 initial state is 1, TK_SW_2 is used for testing, will keep in code for flight
+  95   1      
+  96   1      //Initialize count
+  97   1        g_us_CLOCK_MS = 0;
+  98   1      
+  99   1      //Disable watchdog timer
+ 100   1        Watchdog_disable(); // TODO test if this is necessary!?
+ 101   1      
+ 102   1      //Disable global interrupts
+ 103   1        EA = 0;
+ 104   1        EA = 0; // this is a dummy instruction with two-byte opcode. do not remove
+ 105   1      
+ 106   1      //Initialise External Crystal Osc
+ 107   1        Oscillator_init();
+ 108   1      // Initialise crossbar and GPIO
+ 109   1        Port_init();
+ 110   1      
+ 111   1      
+ 112   1      // TODO understand what this does
+ 113   1      //      while(!SDA)
+ 114   1      //      {
+ 115   1      //      // Provide clock pulses to allow the slave to advance out
+ 116   1      //      // of its current state. This will allow it to release SDA.
+ 117   1      //      XBR2 = 0x40;                     // Enable Crossbar
+C51 COMPILER V9.02   PWRS_MAIN                                                             12/28/2012 23:30:42 PAGE 3   
+
+ 118   1      //      SCL = 0;                         // Drive the clock low
+ 119   1      //      delay_us(250);                         // Hold the clock low
+ 120   1      //      SCL = 1;                         // Release the clock
+ 121   1      //      while(!SCL);                     // Wait for open-drain
+ 122   1      //                                       // clock output to rise
+ 123   1      //      delay_us(10);                              // Hold the clock high
+ 124   1      //      XBR2 = 0x00;                     // Disable Crossbar
+ 125   1      //      }
+ 126   1      
+ 127   1        SFR_init(sfr_buffer, sizeof sfr_buffer);
+ 128   1      
+ 129   1        Checksum_init(0x8005); // Velox standard constant
+ 130   1      
+ 131   1        Raid_init(1);
+ 132   1      
+ 133   1      //Set system clock based on oscillator
+ 134   1        sys_clock = Oscillator_getSystemClock();
+ 135   1      
+ 136   1      //Initialise Timer 0
+ 137   1        Timer0_init(System_getCKCON()); // used for watchdog and various delays
+ 138   1      
+ 139   1      //Initialise Timer 1
+ 140   1        Timer1_init(sys_clock, System_getT1Prescaler()); // used for UART1 baudrate generator
+ 141   1      
+ 142   1      //Initialise Timer 2
+ 143   1        Timer2_init(sys_clock); // not used, but initialized to prevent floating state
+ 144   1      
+ 145   1      //Initialise Timer 3: used for I2C SCL timeout (SMBus)
+ 146   1        SMBusTimer3_init(sys_clock); // used for I2C
+ 147   1      
+ 148   1      //Initialise Timer 4
+ 149   1        Timer4_init(sys_clock); // used for UART0 baudrate generator
+ 150   1      
+ 151   1      //Initialise UART0
+ 152   1        UART0_open(UART0_rx_buffer, UART0_RX_SIZE, UART0_tx_buffer, UART0_TX_SIZE, 0x0F);
+ 153   1      
+ 154   1      //Initialise UART1
+ 155   1        UART1_open(UART1_rx_buffer, UART1_RX_SIZE, UART1_tx_buffer, UART1_TX_SIZE);
+ 156   1      
+ 157   1      //Initialise PCA0 for MPPT
+ 158   1        PCA0_init(0x04, PCA0_CPM_overloadConfig);
+ 159   1      
+ 160   1      //Initialise ADC: used for measure voltage and current
+ 161   1        ADC0_init(sys_clock, 2430);
+ 162   1      
+ 163   1      //Initialise SPI0: Currently not used for PWRS
+ 164   1        SPI0_init(sys_clock, 500);
+ 165   1      
+ 166   1      //Initialize SMBus
+ 167   1      //  SMBus_setRxBuffer(i2c_rxData, I2C_RX_SIZE);
+ 168   1        SMBus_init(0x0a, sys_clock);
+ 169   1      
+ 170   1      //Initialise Watchdog Timer
+ 171   1        Watchdog_advancedInit(10000);
+ 172   1      
+ 173   1        EA = 1; // have to enable interrupts before the first putchar!
+ 174   1      
+ 175   1        Timertask_updateClock();
+ 176   1      
+ 177   1        SFRPAGE = CONFIG_PAGE;
+ 178   1      
+ 179   1        Mccif_setBuffer(XBEE_BUFFER, sizeof XBEE_BUFFER);
+C51 COMPILER V9.02   PWRS_MAIN                                                             12/28/2012 23:30:42 PAGE 4   
+
+ 180   1        Mccif_init(MCCIF_UART, 0x0a, 0);
+ 181   1        Watchdog_confirmAlive();
+ 182   1      
+ 183   1        Timertask_updateClock();
+ 184   1      
+ 185   1        Timertask_initPeriod(&g_str_MAIN_LOOP_TASK, 0, 500);
+ 186   1      
+ 187   1        while (1) {
+ 188   2          // here we are 95% of all time
+ 189   2          // ---
+ 190   2          if (g_c_clock_flag) {
+ 191   3            // only process schedule if clock has advanced
+ 192   3            g_c_clock_flag = 0;
+ 193   3            Timertask_updateClock();
+ 194   3      
+ 195   3            Watchdog_confirmAlive();
+ 196   3            if (Timertask_isReady(&g_str_MAIN_LOOP_TASK)) {
+ 197   4              Mccif_flush();
+ 198   4              Debug_print();
+ 199   4            }
+ 200   3      
+ 201   3            Mccif_uplinkXdata(0);
+ 202   3      
+ 203   3            if (g_uc_OBDH_MODE) {
+ 204   4              printf("sending Master tx\r\n");
+ 205   4              ++hello[4];
+ 206   4              SMBus_setTarget(0x08, 1);
+ 207   4              SMBus_setTxBuffer(hello, 5);
+ 208   4              SMBus_startMasterTx();
+ 209   4              g_uc_OBDH_MODE = 0;
+ 210   4            }
+ 211   3          }
+ 212   2      
+ 213   2        }
+ 214   1      }
+ 215          
+ 216          void Timer2_ISR(void) interrupt (5) {
+ 217   1        TF2 = 0;
+ 218   1      
+ 219   1        ++g_us_CLOCK_MS;
+ 220   1        g_c_clock_flag = 1;
+ 221   1      
+ 222   1        Watchdog_interruptCallback();
+ 223   1      }
+ 224          
+ 225          unsigned short Timertask_getClock_Override() {
+ 226   1        unsigned short clock_ms;
+ 227   1        bit EA_SAVE = EA;
+ 228   1        EA = 0;
+ 229   1        EA = 0;
+ 230   1        clock_ms = g_us_CLOCK_MS;
+ 231   1        EA = EA_SAVE;
+ 232   1        return clock_ms;
+ 233   1      }
+ 234          
+ 235          // This routine overloads the standard putchar() library function to support
+ 236          char putchar(char value) {
+ 237   1        Mccif_appendChar(PRINTF_INDEX, value);
+ 238   1        return value;
+ 239   1      }
+
+
+C51 COMPILER V9.02   PWRS_MAIN                                                             12/28/2012 23:30:42 PAGE 5   
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    639    ----
+   CONSTANT SIZE    =     20    ----
+   XDATA SIZE       =   2129    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

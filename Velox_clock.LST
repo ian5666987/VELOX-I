@@ -1,0 +1,61 @@
+C51 COMPILER V9.02   VELOX_CLOCK                                                           05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_CLOCK
+OBJECT MODULE PLACED IN Velox_clock.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_clock.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          
+   5          #include "Velox_timertask.h"
+   6          #include "Velox_watchdog.h"
+   7          
+   8          volatile char clock_interruptFlag = 0;
+   9          volatile unsigned short clock_interruptMs = 0;
+  10          
+  11          extern unsigned char watchdog_IE;
+  12          
+  13          unsigned short Timertask_getClock_Override() {
+  14   1        unsigned short value;
+  15   1        IE &= ~watchdog_IE;
+  16   1        value = clock_interruptMs;
+  17   1        IE |= watchdog_IE;
+  18   1        return value;
+  19   1      }
+  20          
+  21          // called by the application defined 'milli-seconds counting interrupt'
+  22          // the mask clock_IE defined by Clock_setIE is used block the interrupt in order to access the value clock
+             -_interruptMs
+  23          void Clock_interruptCallback() {
+  24   1        Watchdog_interruptCallback();
+  25   1        ++clock_interruptMs;
+  26   1        clock_interruptFlag = 1;
+  27   1      }
+  28          
+  29          // called in main loop to notify advanced watchdog that main loop still running
+  30          char Clock_hasAdvanced() {
+  31   1        char value = clock_interruptFlag; // no need to disable interrupts for boolean flags
+  32   1        if (value) {
+  33   2          clock_interruptFlag = 0; // no need to disable interrupts
+  34   2          Watchdog_confirmAlive();
+  35   2        }
+  36   1        return value;
+  37   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    100    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      6    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

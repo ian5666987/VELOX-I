@@ -1,0 +1,79 @@
+C51 COMPILER V9.02   STATE_FERRYGPS                                                        05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_FERRYGPS
+OBJECT MODULE PLACED IN state_ferryGps.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_ferryGps.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "shared_general.h"
+   6          #include "shared_adcs.h"
+   7          
+   8          #include "hash_blob.h"
+   9          
+  10          #include "obdh_globalvariables.h"
+  11          #include "obdh_constant.h"
+  12          #include "obdh_recon.h"
+  13          
+  14          #include "state_util.h"
+  15          
+  16          char State_ferryGps(char* subtask) {
+  17   1        char release = 0; // default return choice: do not release state, unless specific set (see release = 1; 
+             -instruction below)
+  18   1        short length;
+  19   1        char value;
+  20   1        switch (*subtask) {
+  21   2        case 0: // sending request
+  22   2          if (SDCard_isAvailable() && Subsystem_isAvailable(ADCS_ADDRESS)) { // only if the subsystem is ON we w
+             -ill get the data segment from them
+  23   3            StateUtil_pokeRequestXdata(ADCS_ADDRESS, XDATA_ADCS_GPS_ISAVAILABLE, 1); // pushRequest
+  24   3            ++*subtask;
+  25   3          } else
+  26   2            release = 1; // sd_card or ADCS is off -> release state
+  27   2          break;
+  28   2        case 1: // waiting for reply
+  29   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  30   3            if (i2c_rxbuffer[MCCIF_DATA_OFFSET + 0]) { // gps frame is available, can continue to talk to adcs
+  31   4              StateUtil_pokeRequestXdata(ADCS_ADDRESS, XDATA_ADCS_GPSBIN_OFFSET, XDATA_ADCS_GPSBIN_LENGTH);
+  32   4              ++*subtask;
+  33   4            } else
+  34   3              release = 1; // no GPS frame is available -> release state
+  35   3          }
+  36   2          break;
+  37   2        case 2: // waiting for reply
+  38   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  39   3            Hash_putBlob(i2c_rxbuffer, length);
+  40   3            Recon_debugPrint(i2c_rxbuffer, length);
+  41   3            value = 0;
+  42   3            StateUtil_pokeSetXdata(ADCS_ADDRESS, XDATA_ADCS_GPS_ISAVAILABLE, 1, &value); // tear down flag
+  43   3            ++*subtask;
+  44   3          }
+  45   2          break;
+  46   2        case 3: // wait for set reply
+  47   2          if (StateUtil_peek(&length, &release) == reply_success)
+  48   2            release = 1;
+  49   2          break;
+  50   2        }
+  51   1        return release;
+  52   1      }
+
+C51 COMPILER V9.02   STATE_FERRYGPS                                                        05/20/2014 11:03:52 PAGE 2   
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    388    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      7    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

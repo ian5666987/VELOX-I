@@ -1,0 +1,186 @@
+C51 COMPILER V9.02   C8051_SCRATCHPAD                                                      01/27/2013 21:19:28 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_SCRATCHPAD
+OBJECT MODULE PLACED IN C8051_scratchpad.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_scratchpad.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // Copyright 2004 Silicon Laboratories, Inc.
+   2          // This program contains several useful utilities for writing and updating
+   3          // FLASH memory.
+   4          // AUTH: BW & GP
+   5          // DATE: 21 JUL 04
+   6          // Target: C8051F12x
+   7          // Tool chain: KEIL C51 7.06
+   8          // Release 1.1
+   9          // -Upgrading release version due to change in FlashPrimitives.h
+  10          // -07 FEB 2006 (GP)
+  11          // Release 1.0
+  12          
+  13          #include "C8051_scratchpad.h"
+  14          #include <c8051F120.h>
+  15          
+  16          // This routine writes <byte> to the linear FLASH address <addr>.
+  17          // Linear map is decoded as follows:
+  18          // Linear Address       Bank     Bank Address
+  19          // ------------------------------------------------
+  20          // 0x00000 - 0x07FFF    0        0x0000 - 0x7FFF
+  21          // 0x08000 - 0x0FFFF    1        0x8000 - 0xFFFF
+  22          // 0x10000 - 0x17FFF    2        0x8000 - 0xFFFF
+  23          // 0x18000 - 0x1FFFF    3        0x8000 - 0xFFFF
+  24          //
+  25          void FLASH_ByteWrite(FLADDR addr, char byte, bit SFLE) {
+  26   1        char SFRPAGE_SAVE = SFRPAGE; // preserve SFRPAGE
+  27   1        bit EA_SAVE = EA; // preserve EA
+  28   1        char PSBANK_SAVE = PSBANK; // preserve PSBANK
+  29   1        char xdata * data pwrite; // FLASH write pointer
+  30   1      
+  31   1        EA = 0; // disable interrupts
+  32   1        EA = 0; // dummy instruction with two-byte opcode. do not remove
+  33   1      
+  34   1        SFRPAGE = LEGACY_PAGE;
+  35   1      
+  36   1        if (addr < 0x10000) { // 64K linear address
+  37   2          pwrite = (char xdata *) addr;
+  38   2        } else if (addr < 0x18000) { // BANK 2
+  39   2          addr |= 0x8000;
+  40   2          pwrite = (char xdata *) addr;
+  41   2          PSBANK &= ~0x30; // COBANK = 0x2
+  42   2          PSBANK |= 0x20;
+  43   2        } else { // BANK 3
+  44   2          pwrite = (char xdata *) addr;
+  45   2          PSBANK &= ~0x30; // COBANK = 0x3
+  46   2          PSBANK |= 0x30;
+  47   2        }
+  48   1      
+  49   1        FLSCL |= 0x01; // enable FLASH writes/erases
+  50   1        PSCTL |= 0x01; // PSWE = 1
+  51   1      
+  52   1        if (SFLE) {
+  53   2          PSCTL |= 0x04; // set SFLE
+  54   2        }
+  55   1      
+C51 COMPILER V9.02   C8051_SCRATCHPAD                                                      01/27/2013 21:19:28 PAGE 2   
+
+  56   1        RSTSRC = 0x02; // enable VDDMON as reset source
+  57   1        *pwrite = byte; // write the byte
+  58   1      
+  59   1        if (SFLE) {
+  60   2          PSCTL &= ~0x04; // clear SFLE
+  61   2        }
+  62   1        PSCTL &= ~0x01; // PSWE = 0
+  63   1        FLSCL &= ~0x01; // disable FLASH writes/erases
+  64   1      
+  65   1        PSBANK = PSBANK_SAVE; // restore PSBANK
+  66   1        SFRPAGE = SFRPAGE_SAVE; // restore SFRPAGE
+  67   1        EA = EA_SAVE; // restore interrupts
+  68   1      }
+  69          
+  70          // This routine reads a <byte> from the linear FLASH address <addr>.
+  71          unsigned char FLASH_ByteRead(FLADDR addr, bit SFLE) {
+  72   1        char SFRPAGE_SAVE = SFRPAGE; // preserve SFRPAGE
+  73   1        bit EA_SAVE = EA; // preserve EA
+  74   1        char PSBANK_SAVE = PSBANK; // preserve PSBANK
+  75   1        char code * data pread; // FLASH read pointer
+  76   1        unsigned char byte;
+  77   1      
+  78   1        EA = 0; // disable interrupts
+  79   1        EA = 0; // dummy instruction with two-byte opcode. do not remove
+  80   1      
+  81   1        SFRPAGE = LEGACY_PAGE;
+  82   1      
+  83   1        if (addr < 0x10000) { // 64K linear address
+  84   2          pread = (char code *) addr;
+  85   2        } else if (addr < 0x18000) { // BANK 2
+  86   2          addr |= 0x8000;
+  87   2          pread = (char code *) addr;
+  88   2          PSBANK &= ~0x30; // COBANK = 0x2
+  89   2          PSBANK |= 0x20;
+  90   2        } else { // BANK 3
+  91   2          pread = (char code *) addr;
+  92   2          PSBANK &= ~0x30; // COBANK = 0x3
+  93   2          PSBANK |= 0x30;
+  94   2        }
+  95   1      
+  96   1        if (SFLE) {
+  97   2          PSCTL |= 0x04; // set SFLE
+  98   2        }
+  99   1      
+ 100   1        byte = *pread; // read the byte
+ 101   1      
+ 102   1        if (SFLE) {
+ 103   2          PSCTL &= ~0x04; // clear SFLE
+ 104   2        }
+ 105   1      
+ 106   1        PSBANK = PSBANK_SAVE; // restore PSBANK
+ 107   1        SFRPAGE = SFRPAGE_SAVE; // restore SFRPAGE
+ 108   1        EA = EA_SAVE; // restore interrupts
+ 109   1      
+ 110   1        return byte;
+ 111   1      }
+ 112          
+ 113          // This routine erases the FLASH page containing the linear FLASH address
+ 114          // <addr>.
+ 115          void FLASH_PageErase(FLADDR addr, bit SFLE) {
+ 116   1        char SFRPAGE_SAVE = SFRPAGE; // preserve SFRPAGE
+ 117   1        bit EA_SAVE = EA; // preserve EA
+C51 COMPILER V9.02   C8051_SCRATCHPAD                                                      01/27/2013 21:19:28 PAGE 3   
+
+ 118   1        char PSBANK_SAVE = PSBANK; // preserve PSBANK
+ 119   1        char xdata * data pwrite; // FLASH write pointer
+ 120   1      
+ 121   1        EA = 0; // disable interrupts
+ 122   1        EA = 0; // dummy instruction with two-byte opcode. do not remove
+ 123   1      
+ 124   1        SFRPAGE = LEGACY_PAGE;
+ 125   1      
+ 126   1        if (addr < 0x10000) { // 64K linear address
+ 127   2          pwrite = (char xdata *) addr;
+ 128   2        } else if (addr < 0x18000) { // BANK 2
+ 129   2          addr |= 0x8000;
+ 130   2          pwrite = (char xdata *) addr;
+ 131   2          PSBANK &= ~0x30; // COBANK = 0x2
+ 132   2          PSBANK |= 0x20;
+ 133   2        } else { // BANK 3
+ 134   2          pwrite = (char xdata *) addr;
+ 135   2          PSBANK &= ~0x30; // COBANK = 0x3
+ 136   2          PSBANK |= 0x30;
+ 137   2        }
+ 138   1      
+ 139   1        FLSCL |= 0x01; // enable FLASH writes/erases
+ 140   1        PSCTL |= 0x03; // PSWE = 1; PSEE = 1
+ 141   1      
+ 142   1        if (SFLE) {
+ 143   2          PSCTL |= 0x04; // set SFLE
+ 144   2        }
+ 145   1      
+ 146   1        RSTSRC = 0x02; // enable VDDMON as reset source
+ 147   1        *pwrite = 0; // initiate page erase
+ 148   1      
+ 149   1        if (SFLE) {
+ 150   2          PSCTL &= ~0x04; // clear SFLE
+ 151   2        }
+ 152   1      
+ 153   1        PSCTL &= ~0x03; // PSWE = 0; PSEE = 0
+ 154   1        FLSCL &= ~0x01; // disable FLASH writes/erases
+ 155   1      
+ 156   1        PSBANK = PSBANK_SAVE; // restore PSBANK
+ 157   1        SFRPAGE = SFRPAGE_SAVE; // restore SFRPAGE
+ 158   1        EA = EA_SAVE; // restore interrupts
+ 159   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    598    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     20    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      6    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      6    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,174 @@
+C51 COMPILER V9.02   OBDH_PORT                                                             05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_PORT
+OBJECT MODULE PLACED IN obdh_port.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_port.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          
+   5          #include "Velox_sfrstack.h"
+   6          
+   7          #include "obdh_port.h"
+   8          
+   9          sbit ON_SD = P4 ^ 1;
+  10          sbit OE_USB = P4 ^ 4;
+  11          
+  12          #define ON_USB 0
+  13          #define SD_ASSERT    0  // redundant
+  14          #define SD_DEASSERT  1
+  15          
+  16          void Port_init() {
+  17   1        // P0.7  -  SCL (SMBus), Open-Drain, Digital
+  18   1        // P0.6  -  SDA (SMBus), Open-Drain, Digital
+  19   1        // P0.5  -  NSS  (SPI0), Open-Drain,  Digital
+  20   1        // P0.4  -  MOSI (SPI0), Open-Drain,  Digital
+  21   1        // P0.3  -  MISO (SPI0), Open-Drain, Digital
+  22   1        // P0.2  -  SCK  (SPI0), Open-Drain,  Digital
+  23   1        // P0.1  -  RX0 (UART0), Open-Drain, Digital
+  24   1        // P0.0  -  TX0 (UART0), Push-Pull,  Digital
+  25   1      
+  26   1        // P1.7  -  CEX3 (PCA),  Push-Pull, Digital
+  27   1        // P1.6  -  CEX2 (PCA),  Push-Pull,  Digital
+  28   1        // P1.5  -  CEX1 (PCA),  Push-Pull,  Digital
+  29   1        // P1.4  -  CEX0 (PCA),  Push-Pull,  Digital
+  30   1        // P1.3  -  RX1 (UART1), Open-Drain, Digital
+  31   1        // P1.2  -  TX1 (UART1), Push-Pull,  Digital
+  32   1        // P1.1  -  AIN2.1,     Open-Drain, Analog
+  33   1        // P1.0  -  AIN2.0,     Open-Drain, Analog
+  34   1      
+  35   1        // P2.7  -  T1 (Timer1), Open-Drain,  Digital
+  36   1        // P2.6  -  INT0 (Tmr0), Open-Drain, Digital
+  37   1        // P2.5  -  T0 (Timer0), Open-Drain,  Digital
+  38   1        // P2.4  -  CP1 (Cmpr1), Open-Drain,  Digital
+  39   1        // P2.3  -  CP0 (Cmpr0), Open-Drain,  Digital
+  40   1        // P2.2  -  ECI,         Open-Drain, Digital
+  41   1        // P2.1  -  CEX5 (PCA),  Push-Pull, Digital
+  42   1        // P2.0  -  CEX4 (PCA),  Push-Pull, Digital
+  43   1      
+  44   1        // P3.7  -  CNVSTR2,     Open-Drain, Digital
+  45   1        // P3.6  -  CNVSTR0,     Open-Drain, Digital
+  46   1        // P3.5  -  SYSCLK,      Open-Drain,  Digital
+  47   1        // P3.4  -  T4EX (Tmr4), Open-Drain, Digital
+  48   1        // P3.3  -  T4 (Timer4), Open-Drain, Digital
+  49   1        // P3.2  -  T2EX (Tmr2), Open-Drain, Digital
+  50   1        // P3.1  -  T2 (Timer2), Open-Drain, Digital
+  51   1        // P3.0  -  INT1 (Tmr1), Open-Drain, Digital
+  52   1      
+  53   1        //  EN_5_ADS    = P4^0; //ADS    push pull
+  54   1        //  EN_5_ACS    = P4^1; //ACS    push pull
+  55   1        //  EN_5_PAYL   = P4^2; //PAYL   push pull
+C51 COMPILER V9.02   OBDH_PORT                                                             05/20/2014 11:03:52 PAGE 2   
+
+  56   1        //  EN_5_DEPL   = P4^3; //DEPL   push pull
+  57   1        //  EN_COMM     = P4^4; //Comm   open drain
+  58   1        //  EN_SDC_1    = P4^5; //Main SDC with MOSFET open drain
+  59   1        //  EN_SDC_2    = P4^6; //Redundacy SDC with Schottky Diode push pull
+  60   1        //  EN_3V3_PAYL = P4^7; //3V3 PAYL push pull
+  61   1        //
+  62   1        //  BATT_CTRL    = P5^0;  //BATT Control open drain
+  63   1        //  PWM_SEL_1    = P5^1;  //PWM SEL 1 open drain
+  64   1        //  PWM_SEL_2    = P5^2;  //PWM SEL 2 push pull
+  65   1        //  AMUX_SEL_1   = P5^3;  //AMUX SEL 1 push pull
+  66   1        //  AMUX_SEL_2   = P5^4;  //AMUX SEL 2 push pull
+  67   1        //  AMUX_SEL_3   = P5^5;  //AMUX SEL 3 push pull
+  68   1        //  OBDH_RESET   = P5^6;  //OBDH_RESET_N input open drain
+  69   1        //  OBDH_OFF_VCC = P5^7;  //OBDH OFF VCC push pull
+  70   1        //
+  71   1        //  OBDH_FAULT  = P6^0;  //OBDH_FAULT Input - open drain
+  72   1        //  FLT_5V_ADS  = P6^1;  //FLT_5V_ADS Input - open drain
+  73   1        //  FLT_5V_ACS  = P6^2;  //FLT_5V_ACS Input - open drain
+  74   1        //  FLT_5V_PAYL = P6^3;  //FLT_5V_PAYL Input - open drain
+  75   1        //  FLT_5V_DEPL = P6^4;  //FLT_5V_DEPL Input - open drain
+  76   1        //  FLT_COMM    = P6^5;  //FLT_COMM Input - open drain
+  77   1        //  PWRGD_1     = P6^6;  //PWRGD_1 Input - open drain
+  78   1        //  PWRGD_2     = P6^7;  //PWRGD_2 Input - open drain
+  79   1        //
+  80   1        //  LED_1     = P7^0;  //LED 1 output push pull
+  81   1        //  LED_2     = P7^1;  //LED 2 output push pull
+  82   1        //  TK_SW_1   = P7^2;  //TK SW1 input open drain
+  83   1        //  TK_SW_2   = P7^3;  //TK SW2 input open drain
+  84   1        //  P7_4      = P7^4;  //spare open drain
+  85   1        //  P7_5      = P7^5;  //spare open drain
+  86   1        //  P7_6      = P7^6;  //spare open drain
+  87   1        //  P7_7      = P7^7;  //spare open drain
+  88   1      
+  89   1        // crossbar enabled, disable weak push-ups
+  90   1      
+  91   1        SFR_pushPage(CONFIG_PAGE); //Save current SFR page and set SFR page
+  92   1        // PWRS config
+  93   1        //  XBR0 = 0xF7;
+  94   1        //  XBR1 = 0xFF;
+  95   1        //  XBR2 = 0x7D;
+  96   1        //  P1MDIN = 0xFC;
+  97   1        //  P1|=0x03; // based on page 240, data bits need to set to 1 for analog pins
+  98   1        //  P0MDOUT = 0x01;
+  99   1        //  P1MDOUT = 0xF4;
+ 100   1        //  P2MDOUT = 0x03;
+ 101   1        //  P3MDOUT = 0x00;
+ 102   1        //  P4MDOUT = 0xCF;
+ 103   1        //  P5MDOUT = 0xBC;
+ 104   1        //  P6MDOUT = 0x00;
+ 105   1        //  P7MDOUT = 0x03;
+ 106   1      
+ 107   1        //  char SFRPAGE_SAVE = SFRPAGE;
+ 108   1        //
+ 109   1        //  SFRPAGE = CONFIG_PAGE;
+ 110   1      
+ 111   1        XBR0 |= 0x07; //To enable UART0 (XBR0^2), SPI (XBR0^1), and SM Bus (XBR0^0)
+ 112   1      
+ 113   1        P0MDOUT &= ~0xC0; //P0^6-7 pins open-drain output (that SDA and SCL lines
+ 114   1        //may draw current from outsource power supply)
+ 115   1      
+ 116   1        //To make P0^2 to P0^5 (SPI pins) push-pull pins too
+ 117   1        P0MDOUT |= 0x3D; //Make UART0 TX(P0.0 push-pull) (that it may send data
+C51 COMPILER V9.02   OBDH_PORT                                                             05/20/2014 11:03:52 PAGE 3   
+
+ 118   1        //through UART cable by its own power supply)
+ 119   1        P0 = 0xFF; //By default, all pins will be 'high'
+ 120   1      
+ 121   1        P1MDOUT = 0x00; //All P1 pins open-drain output (that UART1
+ 122   1        //may draw current from outsource power supply)
+ 123   1        P1MDOUT |= 0x01; //Make UART1 TX(P1.0 push-pull) (that it may send data
+ 124   1        //through UART cable by its own power supply)
+ 125   1        P1 = 0xFF; //By default, all pins will be 'high'
+ 126   1      
+ 127   1        P4MDOUT |= 0x12; //To make P4^1 & P4^4 pins (-ON_SD pin & -OE_USB) as push-pull
+ 128   1      //  P4MDOUT |= 0x13;  //add P4^0 as a push-pull port because this P4^0 is going to be used as an indicator
+ 129   1      //                    //for I2C lines down timeout. Originally, statement P4MDOUT |= 0x12; should be enoug
+             -h
+ 130   1      //                    //In the hardware, this corresponds to H2.18 pin.
+ 131   1        P4 = 0xFF; //make sure that all pins in port 4 are enabled as high first.
+ 132   1        OE_USB = ON_USB; //Enable USB port
+ 133   1      
+ 134   1        // EMIF port setting;
+ 135   1        P4MDOUT |= 0xE0; // To make P4^5 (ALE), P4^6 (-READ), P4^7 (-WRITE) push-pull.
+ 136   1        P5MDOUT |= 0xC0; // To make P5^6(-MEMBUS), P5^7(MEMBANK) push pull;
+ 137   1        P6MDOUT |= 0xFF;
+ 138   1        P7MDOUT |= 0xFF; // To make data line, address line push-pull;
+ 139   1      
+ 140   1        ON_SD = SD_ASSERT; // Turn on SD Card
+ 141   1        NSSMD0 = SD_DEASSERT; //Disable chip select for now
+ 142   1      
+ 143   1        XBR2 |= 0x44; //To enable crossbar and weak pull-ups
+ 144   1      
+ 145   1        SFR_popPage(); //Restore SFR page
+ 146   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     57    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

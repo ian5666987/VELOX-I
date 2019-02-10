@@ -1,0 +1,151 @@
+C51 COMPILER V9.02   OBDH_GRACE                                                            05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_GRACE
+OBJECT MODULE PLACED IN obdh_grace.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_grace.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <stdio.h>
+   4          
+   5          #include "mccif_buffer.h"
+   6          
+   7          #include "Velox_beacon.h"
+   8          #include "Velox_macros.h"
+   9          #include "Velox_meta.h"
+  10          #include "Velox_screen.h"
+  11          #include "Velox_slowtask.h"
+  12          #include "Velox_uptime.h"
+  13          
+  14          #include "sdcard_generic.h"
+  15          #include "sdcard_redundant.h"
+  16          
+  17          #include "comm_generic.h"
+  18          
+  19          #include "hash_manifest.h"
+  20          
+  21          #include "obdh_auth.h"
+  22          #include "obdh_globalvariables.h"
+  23          #include "obdh_trxuv.h"
+  24          
+  25          #define ONE_DAY_IN_SECOND                        86400
+  26          #define MIN_GPASS_TIME         300
+  27          #define MAX_GPASS_TIME                           1200 //20 minutes are the maximum amount of time for COMM to send AX25 frames 
+             -(15 mins + 5 mins buffer)
+  28          #define RADIOUP_INTERVAL_MAX   6917   // at most every 7 sec
+  29          #define FERRY_INTERVAL_MIN     53
+  30          #define BEACON_INTERVAL_MIN    25     // at least 25 sec between 2 beacon
+  31          #define SD_INIT_RETRY_PERIOD   5
+  32          #define SD_INIT_RETRY_AT       3      // first try to initialize sd card is after 3 seconds
+  33          #if SD_INIT_RETRY_AT >= SD_INIT_RETRY_PERIOD
+              #error "at must be strickly smaller"
+              #endif
+  36          
+  37          extern Statetask g_statetask_wireUp;
+  38          extern Statetask g_statetask_radioUp;
+  39          extern Statetask g_statetask_trxuvHk;
+  40          extern Statetask g_statetask_downlink;
+  41          
+  42          unsigned short gndPass_absoluteTime = 0;
+  43          
+  44          void Grace_eachSecond() {
+  45   1        // BEGIN: stay alive
+  46   1        g_statetask_wireUp.task.mode = timertask_repeated;
+  47   1        g_statetask_radioUp.task.mode = timertask_repeated;
+  48   1        g_statetask_radioUp.task.delay = min(g_statetask_radioUp.task.delay, RADIOUP_INTERVAL_MAX);
+  49   1        g_statetask_downlink.task.mode = timertask_repeated; // otherwise can not authenticate
+  50   1        if (g_trxuv.runtime.delay < MIN_GPASS_TIME) //this is to ensure whatever happen, we can talk to the sate
+             -llite
+  51   1          g_trxuv.runtime.delay = MIN_GPASS_TIME;
+  52   1        if (g_slow_beacon.mode != slowtask_repeated && g_slow_beacon.mode != slowtask_disabled)
+  53   1              g_slow_beacon.mode = slowtask_repeated; //the beacon must either be off or disabled, can't be something
+C51 COMPILER V9.02   OBDH_GRACE                                                            05/20/2014 11:03:51 PAGE 2   
+
+             - else
+  54   1        // END: stay alive
+  55   1      
+  56   1        // BEGIN: requirement by design
+  57   1        g_statetask_trxuvHk.task.mode = timertask_repeated; // required to repeatedly update tx status: idle sta
+             -te, ...
+  58   1        // END: requirement by design
+  59   1      
+  60   1        // BEGIN: probably a good idea
+  61   1        // END: probably a good idea
+  62   1      
+  63   1        // --- postpone to initialize SD card to several seconds after startup, since only then SD_init() can be
+             - successful
+  64   1        if (!g_sdcard.isAvailable && uptime.session % SD_INIT_RETRY_PERIOD == SD_INIT_RETRY_AT) {
+  65   2          g_sdcard.isAvailable = SD_init(); // ian: expected time: first time 77ms.
+  66   2          if (g_sdcard.isAvailable)
+  67   2            Hash_readManifest();
+  68   2        }
+  69   1        // --- to ensure that after one day, the SD card is not abused by storing housekeeping data every 10 sec
+             -onds ian: updated on 20140207
+  70   1        if (uptime.total >= ONE_DAY_IN_SECOND && uptime.total < ONE_DAY_IN_SECOND + 5 && g_putFrame.task.delay <
+             - 60)
+  71   1              Slowtask_setPeriodic(&g_putFrame.task, 60); //to change the periodical update after one day, but only h
+             -as 5 seconds window to do it (should be enough!)
+  72   1        // --- ensure that beacon is not scheduled more often than BEACON_INTERVAL_MIN sec
+  73   1        g_slow_beacon.delay = max(BEACON_INTERVAL_MIN, g_slow_beacon.delay);
+  74   1        // ---
+  75   1        g_c_beacon[XDATA_PWRS_BEACON_LENGTH] = Beacon_linear(-20, chip_meta.mcuTemperature, 85); //OBDH beacon i
+             -s after the PWRS beacon, therefore XDATA_PWRS_BEACON_LENGTH
+  76   1        // ---
+  77   1        if ((g_us_obdh_channel_status & CHANNEL_MASK_ADS) == CHANNEL_MASK_ADS) // if ads is on, can reduce g_c_a
+             -dcsBootedIn
+  78   1          g_c_adcsIsReadyIn = max(0, g_c_adcsIsReadyIn - 1);
+  79   1        // ---
+  80   1        g_slow_gndPass.delay = max(30, g_slow_gndPass.delay); // at least half a minute -> can manually exit gnd
+             - pass anyways
+  81   1        Slowtask_isReady(&g_slow_gndPass); // exit gnd pass if timeout
+  82   1        // ---
+  83   1        // --- To limit groundpass period to around 16 minutes
+  84   1        if (g_slow_gndPass.mode == slowtask_executeOnce){
+  85   2              gndPass_absoluteTime++;
+  86   2              Runtime_fromNow(&g_trxuv.runtime); // COMM should not be turned OFF during ground pass by mistake!
+  87   2              if (gndPass_absoluteTime >= MAX_GPASS_TIME)
+  88   2                      Slowtask_setDisabled(&g_slow_gndPass);
+  89   2        }
+  90   1        // BEGIN: manage real-time housekeeping
+  91   1        if (g_slow_gndPass.mode == slowtask_disabled){ // if gnd pass is NOT active
+  92   2          Slowtask_fromNow(&g_rtHk.task); // postpone rt-hk task
+  93   2          gndPass_absoluteTime = 0; //keep this value as zero if the satellite is not in the groundpass
+  94   2        }
+  95   1        // ---
+  96   1        if (Slowtask_isReady(&g_rtHk.task))
+  97   1          if (g_rtHk.mask_now == 0L) // previous real-time hk queue has been processed completely
+  98   1            g_rtHk.mask_now = g_rtHk.template; // trigger avalance of rtHk downlinks
+  99   1        // ---
+ 100   1        if (g_rtHk.forceNow) { // explicit manual control from ground station = force now
+ 101   2          Slowtask_fromNow(&g_rtHk.task); // postpone rt-hk task
+ 102   2          if (1 == g_rtHk.forceNow) //only if forceNow is set to 1, then the mask_now will follow template, else
+             - it is random, as requested!
+ 103   2            g_rtHk.mask_now = g_rtHk.template; // trigger avalance of rtHk downlinks
+ 104   2          g_rtHk.forceNow = 0;
+ 105   2        }
+C51 COMPILER V9.02   OBDH_GRACE                                                            05/20/2014 11:03:51 PAGE 3   
+
+ 106   1        // END: manage real-time housekeeping
+ 107   1        g_trxuv.failures = comm_failCount;
+ 108   1              g_trxuv.rateCW = min(max(2, g_trxuv.rateCW), 150); // min=2 is a hw-requirement, but upper bound is debat
+             -able
+ 109   1        // ---
+ 110   1        Mccif_flush();
+ 111   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    730    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      2    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

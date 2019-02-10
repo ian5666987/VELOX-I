@@ -1,0 +1,115 @@
+C51 COMPILER V9.02   PWRS_LOAD                                                             12/28/2012 14:31:20 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_LOAD
+OBJECT MODULE PLACED IN PWRS_load.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_load.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael maintained by JM
+   2          #include <c8051f120.h>
+   3          #include "Velox_sfrstack.h"
+   4          #include "PWRS_constant.h"
+   5          #include "PWRS_main.h"
+   6          #include "PWRS_extern_data.h"
+   7          #include "PWRS_load.h"
+   8          #include "PWRS_port.h"
+   9          
+  10          void Load_updateChannelStatus() {
+  11   1        SFR_pushPage(CONFIG_PAGE);
+  12   1      
+  13   1        g_uc_CHANNEL_STATUS = P4 & 0x1F;
+  14   1        if (EN_3V3_PAYL == 1)
+  15   1          g_uc_CHANNEL_STATUS |= 0x20;
+  16   1      
+  17   1        SFR_popPage();
+  18   1      }
+  19          
+  20          
+  21          void Load_setSingleOutputNow(char Channel, unsigned char Value) {
+  22   1        SFR_pushPage(CONFIG_PAGE);
+  23   1        TK_SW_2 = 1; // to probe timing with oscilloscope
+  24   1        switch (Channel) {
+  25   2        case 0: //ADS
+  26   2          EN_5_ADS = Value;
+  27   2          break;
+  28   2        case 1: //ACS
+  29   2          EN_5_ACS = Value;
+  30   2          break;
+  31   2        case 2: //PAYL
+  32   2          EN_5_PAYL = Value;
+  33   2          break;
+  34   2        case 3: //DEPLOY MECH.
+  35   2          EN_5_DEPL = Value;
+  36   2          break;
+  37   2        case 4: //COMM
+  38   2          EN_COMM = Value;
+  39   2          break;
+  40   2        case 5: //3V3 PAYL
+  41   2          EN_3V3_PAYL = Value;
+  42   2          break;
+  43   2        default:
+  44   2          break;
+  45   2        }
+  46   1        SFR_popPage();
+  47   1        Load_updateChannelStatus();
+  48   1      }
+  49          
+  50          // SET_SINGLE_OUTPUT
+  51          // Set single latch output
+  52          // Parameters   : Channel 0: ADS
+  53          //          Channel 1: ACS
+  54          //            Channel 2: PAYL
+  55          //            Channel 3: DEPLOY MECH.
+C51 COMPILER V9.02   PWRS_LOAD                                                             12/28/2012 14:31:20 PAGE 2   
+
+  56          //          Value 0: OFF
+  57          //          Value 1: ON
+  58          //          Delay_ms: Delay time in ms before turn OFF/ON latch OUTPUT
+  59          void Load_setSingleOutputScheduled(char Channel, unsigned char Value, unsigned short Delay_ms) {
+  60   1        SFR_pushPage(CONFIG_PAGE);
+  61   1        TK_SW_2 = 0; // to probe timing with oscilloscope
+  62   1        SFR_popPage();
+  63   1        // Function will store variables Value & Delay_ms in a global variable. Function will be
+  64   1        // called again in Timer0 ISR
+  65   1        Subsystems_task[Channel].delay = Delay_ms; //for storing channel delay value (from I2C)
+  66   1        Subsystems_task[Channel].mode = timertask_executeOnce;
+  67   1        Subsystems_value[Channel] = Value; //for storing channel value (from I2C)
+  68   1      
+  69   1      }
+  70          
+  71          // SET_OUTPUT
+  72          // Set latch output by masking Channel_Enable byte
+  73          // Useful when used to turn off multiple latch outputs
+  74          // Parameters   : Channel_Enable: 0|0|3V3 PAYL|Comms|DEPLOY MECH.|PAYL|ACS|ADS
+  75          //          Value 0: OFF
+  76          //          Value 1: ON
+  77          void Load_setOutputChannels(unsigned char Channel_Enable) {
+  78   1        unsigned char Output;
+  79   1        Output = (Channel_Enable & 0x3F); //Masked out first 2 bits of Channel_Enable as not important
+  80   1        if (Output & 0x20) { //if EN_3V3_PAYL required to be 1, bit swap it to bit 7
+  81   2          // TODO here the following happens : Channel_Enable: 3V3 PAYL|0|0|Comms|DEPLOY MECH.|PAYL|ACS|ADS
+  82   2          Output &= 0xDF; // TODO IMPORTANT simplification! possible ?
+  83   2          Output |= 0x80;
+  84   2        }
+  85   1        SFR_pushPage(CONFIG_PAGE);
+  86   1        P4 &= (Output | 0x60); //AND operation to disable latch output
+  87   1        P4 |= (Output & 0x9F); //OR operation to enable latch output
+  88   1        SFR_popPage();
+  89   1        Load_updateChannelStatus();
+  90   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    384    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      8    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

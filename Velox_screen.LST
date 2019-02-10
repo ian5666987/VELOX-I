@@ -1,0 +1,45 @@
+C51 COMPILER V9.02   VELOX_SCREEN                                                          05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_SCREEN
+OBJECT MODULE PLACED IN Velox_screen.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_screen.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "Velox_macros.h"
+   4          #include "Velox_screen.h"
+   5          #include "Velox_timertask.h"
+   6          
+   7          // TODO needs to be initialized somehow... low priority
+   8          
+   9          void Screen_capture() {
+  10   1        short toc = Timertask_getClock_Override();
+  11   1        screen.timing.lastLoopDuration = toc - screen.timing.currentLoopTic;
+  12   1        screen.timing.maxLoopsDuration = max(screen.timing.maxLoopsDuration, screen.timing.lastLoopDuration);
+  13   1        screen.timing.currentLoopTic = toc;
+  14   1        ++screen.iterations.currentLoopsCount;
+  15   1      }
+  16          
+  17          void Screen_summary() {
+  18   1        screen.timing.maxLoopsDuration = 0;
+  19   1        // ---
+  20   1        screen.iterations.lastLoopsCount = screen.iterations.currentLoopsCount;
+  21   1        screen.iterations.currentLoopsCount = 0;
+  22   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    161    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      2    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,12 @@
+C51 COMPILER V9.02   SYSTEM_CONFIG                                                         06/02/2013 00:08:49 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE SYSTEM_CONFIG
+OBJECT MODULE PLACED IN system_config.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE system_config.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+*** ERROR C318 OF system_config.c: can't open file 'system_config.c'
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  1 ERROR(S)

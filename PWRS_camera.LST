@@ -1,0 +1,188 @@
+C51 COMPILER V9.02   PWRS_CAMERA                                                           12/28/2012 14:31:20 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_CAMERA
+OBJECT MODULE PLACED IN PWRS_camera.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_camera.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          #include "Velox_uart.h"
+   5          #include "Velox_timertask.h"
+   6          #include "Velox_checksum.h"
+   7          #include "PWRS_camera.h"
+   8          #include "PWRS_constant.h"
+   9          #include "PWRS_extern_data.h"
+  10          
+  11          #define   CAMERA_CONTENT    213
+  12          
+  13          char camera_buffer0[CAMERA_CONTENT]; // private variable
+  14          char camera_buffer1[CAMERA_CONTENT]; // private variable
+  15          
+  16          char camera_buffer0_hasData = 0; // private variable
+  17          char camera_buffer1_hasData = 0; // private variable
+  18          //unsigned char frame_check = 0;
+  19          
+  20          void Camere_resetBuffer() {
+  21   1        camera_buffer0_hasData = 0;
+  22   1        camera_buffer1_hasData = 0;
+  23   1      }
+  24          
+  25          void Camera_boot() {
+  26   1        // TODO turn on supply for camera
+  27   1        Camere_resetBuffer();
+  28   1      }
+  29          
+  30          void Camera_terminate() {
+  31   1        // TODO terminate supply for camera
+  32   1        Camere_resetBuffer();
+  33   1      }
+  34          
+  35          void Camera_maintainBuffers() {
+  36   1        if (!camera_buffer0_hasData && camera_buffer1_hasData) {
+  37   2          memcpy(&camera_buffer0, &camera_buffer1, sizeof camera_buffer0);
+  38   2          camera_buffer0_hasData = 1;
+  39   2          camera_buffer1_hasData = 0;
+  40   2        }
+  41   1      }
+  42          
+  43          void Camera_acquisitionHandler() {
+  44   1        Camera_maintainBuffers();
+  45   1        if (!camera_buffer1_hasData)
+  46   1          Camera_poll();
+  47   1      }
+  48          
+  49          void Camera_poll() {
+  50   1        char message;
+  51   1        if (Uart_pollChars(CAMERA_UART, &message, 1)) {
+  52   2          // 223 * 8 / 115200 => 15.486 ms
+  53   2          // BAUDRATE_0
+  54   2          g_str_CAMERA_TASK.delay = 20;
+  55   2          g_str_CAMERA_TASK.mode = timertask_executeOnce;
+C51 COMPILER V9.02   PWRS_CAMERA                                                           12/28/2012 14:31:20 PAGE 2   
+
+  56   2        }
+  57   1      }
+  58          
+  59          //char Camera_Framecheck(char frame_sequence) {
+  60          //  if (((frame_sequence >> 2)&0x1F) == (frame_check%32)) {
+  61          //    ++frame_check;
+  62          //    return 1;
+  63          //  }else if (((frame_sequence >> 2)&0x1F) == 0) {
+  64          //    frame_check = 0;
+  65          //    ++frame_check;
+  66          //    return 1;
+  67          //  }
+  68          //  return 0;
+  69          //}
+  70          
+  71          // this should only be called 20 ms after first byte has arrived
+  72          // at this point there has to be a guarantee that no data is in buffer 1
+  73          void Camera_getFramedata() {
+  74   1        char* message;
+  75   1        char trash;
+  76   1        // ---
+  77   1        message = camera_buffer1;
+  78   1        if (Uart_pollChars(CAMERA_UART, message, CAMERA_CONTENT)) {
+  79   2          Uart_advance(CAMERA_UART, CAMERA_CONTENT);
+  80   2          camera_buffer1_hasData = Checksum_isValid(message, CAMERA_CONTENT);
+  81   2      //    camera_buffer1_hasData &= Camera_Framecheck(message[0]);
+  82   2        }
+  83   1        // clear errors or rest or nothing if correct
+  84   1        while (Uart_pollChars(CAMERA_UART, &trash, 1))
+  85   1          Uart_advance(CAMERA_UART, 1);
+  86   1      
+  87   1        if (camera_buffer1_hasData) { // even if both buffers hold data, we can already request 3rd
+  88   2          Camera_maintainBuffers();
+  89   2          Camera_sendCommand('N'); // REQUEST NEXT FRAME CAMERA DATA
+  90   2        } else
+  91   1          Camera_sendCommand('R'); // REQUEST SAME FRAME CAMERA DATA
+  92   1      }
+  93          
+  94          void Camera_sendCommand(char command) {
+  95   1        char buffer[3];
+  96   1        memset(buffer, command, sizeof buffer);
+  97   1        Uart_putChars(CAMERA_UART, buffer, sizeof buffer);
+  98   1      }
+  99          
+ 100          char Camera_commandHandler(char command) {
+ 101   1        // AT THIS point header info is available
+ 102   1        switch (command) {
+ 103   2        case 0x00: // REQUEST FRAME CAMERA DATA
+ 104   2          if (camera_buffer0_hasData) {
+ 105   3            Uart_putChars(MCCIF_UART, "BLOB", 4);
+ 106   3            Uart_putChars(MCCIF_UART, &camera_buffer0, CAMERA_CONTENT);
+ 107   3          } else {
+ 108   3            // TODO
+ 109   3      //          Uart_putChars(MCCIF_UART, "BLOB", 4);
+ 110   3      //          for (c0 = 0; c0 < CAMERA_CONTENT; ++c0)
+ 111   3      //            Uart_putChar(MCCIF_UART, 0xff);
+ 112   3          }
+ 113   2          break;
+ 114   2        case 0x01: // DATA TRANSMITTED SUCCESS
+ 115   2          Camera_acknowledge();
+ 116   2          break;
+ 117   2        case 0x02: // HALT CAMERA
+C51 COMPILER V9.02   PWRS_CAMERA                                                           12/28/2012 14:31:20 PAGE 3   
+
+ 118   2          Camera_sendCommand('h');
+ 119   2          break;
+ 120   2        case 0x03: // BOOT CAMERA
+ 121   2          Camera_boot();
+ 122   2          break;
+ 123   2        case 0x04: // TERMINATE CAMERA
+ 124   2          Camera_terminate();
+ 125   2          break;
+ 126   2        default:
+ 127   2          return 0;
+ 128   2          break;
+ 129   2        }
+ 130   1        return 1;
+ 131   1      }
+ 132          
+ 133          void Camera_SMBustx() {
+ 134   1      }
+ 135          
+ 136          void Camera_acknowledge() {
+ 137   1        camera_buffer0_hasData = 0;
+ 138   1        Camera_maintainBuffers();
+ 139   1      }
+ 140          
+ 141          void Camera_uplinkMcc(char port) {
+ 142   1        char message[8];
+ 143   1        char success;
+ 144   1        if (Uart_pollChars(port, message, 8)) {
+ 145   2          success = 1;
+ 146   2          success &= message[0] == 'P';
+ 147   2          success &= message[1] == 'I';
+ 148   2          success &= message[2] == 'C';
+ 149   2          success &= message[3] == 'T';
+ 150   2          success &= message[4] == 0x0E; // subsystem camera
+ 151   2          success &= Checksum_isValid(message, 8);
+ 152   2          if (success) {
+ 153   3            success &= Camera_commandHandler(message[5]);
+ 154   3            if (success)
+ 155   3              Uart_advance(port, 8);
+ 156   3          }
+ 157   2          if (!success)
+ 158   2            Uart_advance(port, 1);
+ 159   2        }
+ 160   1      }
+ 161          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    712    ----
+   CONSTANT SIZE    =      5    ----
+   XDATA SIZE       =    448    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

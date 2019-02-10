@@ -1,0 +1,158 @@
+C51 COMPILER V9.02   STATE_UPLINK                                                          07/21/2013 21:55:59 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_UPLINK
+OBJECT MODULE PLACED IN state_uplink.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_uplink.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          #include <stdio.h>
+   5          
+   6          #include "Velox_macros.h"
+   7          
+   8          #include "mccif_active.h"
+   9          #include "mccif_local.h"
+  10          #include "mccif_spy.h"
+  11          #include "mccif_xdata.h"
+  12          
+  13          #include "comm_imc.h"
+  14          
+  15          #include "obdh_constant.h"
+  16          #include "obdh_globalvariables.h"
+  17          #include "obdh_recon.h"
+  18          
+  19          #include "state_util.h"
+  20          
+  21          void StateUplink_prepareAck(char* message) {
+  22   1        // if g_c_sendAck_flag == 1 an unprocessed ack might be overwritten, but that's ok
+  23   1        memset(g_sendAck.arg, 0, sizeof g_sendAck.arg); // pad with zeros
+  24   1        memcpy(&g_sendAck.xdatSeg, &message[MCCIF_SYSTEM_OFFSET], 4 + Mccif_getArgLength(message));
+  25   1      }
+  26          
+  27          // indicate to gnd station that set instruction has been received and reached target
+  28          void StateUplink_releaseAck() {
+  29   1        ++g_sendAck.uplinkId;
+  30   1        g_sendAck.clock = Timertask_getClock_Override();
+  31   1        g_c_sendAck_flag = 1;
+  32   1      }
+  33          
+  34          // function returns true if message constitutes a valid set instruction for either OBDH itself, or PWRS or
+             - ADCS.
+  35          // in case the set instruction targets OBDH, the instruction has immediate effect
+  36          // if the set instruction is destined for PWRS or ADCS, the instruction is forwarded via SMBUS
+  37          // in the latter case, a StateUtil_peek handler is recommended to cleanly receive the confirmation
+  38          char Mccif_localHandle_Override(char* message) {
+  39   1        char updated = 0;
+  40   1        char system;
+  41   1        if (message[4] == MCCIF_ID_SET) { // rather than MCCIF_ID_REQUEST
+  42   2          system = message[MCCIF_SYSTEM_OFFSET];
+  43   2          if (system == mccif_localSystem) {
+  44   3            updated = Mccif_localSet(message);
+  45   3            if (updated) {
+  46   4              StateUplink_prepareAck(message);
+  47   4              StateUplink_releaseAck(); // indicate to gnd station that uplink command has been received and rea
+             -ched target
+  48   4            }
+  49   3          } else if (Subsystem_isAvailable(system)) {
+  50   3            StateUplink_prepareAck(message);
+  51   3            StateUtil_pokeSetXdata(system, //
+  52   3                extractFromBuffer(short, message + MCCIF_OFFSET_OFFSET), // MCCIF_SYSTEM_OFFSET + 1
+  53   3                extractFromBuffer(unsigned char, message + MCCIF_LENGTH_OFFSET), // MCCIF_SYSTEM_OFFSET + 3
+C51 COMPILER V9.02   STATE_UPLINK                                                          07/21/2013 21:55:59 PAGE 2   
+
+  54   3                message + MCCIF_DATA_OFFSET); // uses i2c_txbuffer
+  55   3            updated = 1;
+  56   3          }
+  57   2        }
+  58   1        return updated;
+  59   1      }
+  60          
+  61          // ---
+  62          
+  63          #define   TRXUVHK_PREPARE_REPLY_MS  20
+  64          
+  65          char State_radioUp(char* subtask) {
+  66   1        char release = 0; // default return choice: do not release state, unless specific set (see release = 1; 
+             -instruction below)
+  67   1        char upNumel; // just dummy variable
+  68   1        char hasFrame; // used both to indicate how many frames are in rx buffer, but also if getFrame operation
+             - was successful
+  69   1        short length;
+  70   1        if (CommHardware_isAvailable()) {
+  71   2          switch (*subtask) {
+  72   3          case 0:
+  73   3            Comm_rxQueueSizePut(); // request queue size of rx buffer
+  74   3            Timertask_setExecuteOnce(&g_stateTask, TRXUVHK_PREPARE_REPLY_MS); // delay for a brief moment to all
+             -ow ISISCOMM to prepare reply
+  75   3            ++*subtask;
+  76   3            break;
+  77   3          case 1:
+  78   3            if (Timertask_isReady(&g_stateTask)) // when delay has elapsed
+  79   3              if (Comm_rxQueueSizeGet(&hasFrame)) { // get queue size of rx buffer
+  80   4                if (hasFrame) { // numel != 0 -> buffer holds rx_frame
+  81   5                  Comm_rxFramePut(); // announce to get the rxFrame from the buffer
+  82   5                  Timertask_setExecuteOnce(&g_stateTask, TRXUVHK_PREPARE_REPLY_MS + 5); // give extra time to co
+             -py frame data
+  83   5                  ++*subtask;
+  84   5                } else
+  85   4                  // numel == 0 -> rx_frame queue is empty
+  86   4                  release = 1; // uplink frame buffer empty
+  87   4              } else
+  88   3                // link to ISISCOMM had a problem, need to come back and retry (in this case the comm.failCount 
+             -will increase, so far does not happen at all!)
+  89   3                release = 1; // release due to smbus layer fail
+  90   3            break;
+  91   3          case 2:
+  92   3            if (Timertask_isReady(&g_stateTask)) { // when delay has elapsed
+  93   4              hasFrame = Comm_rxFrameGet(xdata_txbuffer + 5, &upNumel); // get rxFrame content
+  94   4              Comm_rxFrameDrop(); // ALWAYS command ISISCOMM to drop rxFrame from buffer, DO NOT PUT THIS INSIDE
+             - IF, in case some insurmountable reason, otherwise stuck forever
+  95   4              if (hasFrame) {
+  96   5                memcpy(xdata_txbuffer, mccif_xdatMarker, sizeof mccif_xdatMarker); // XDAT prefix
+  97   5                xdata_txbuffer[4] = MCCIF_ID_SET; // last byte of the 5 byte header
+  98   5                hasFrame = Mccif_localHandle_Override(xdata_txbuffer);
+  99   5                if (hasFrame)
+ 100   5                  if (g_sendAck.xdatSeg.system == mccif_localSystem) // if the set instruction was intended for 
+             -OBDH, the state can terminate right away
+ 101   5                    release = 1;
+ 102   5                  else
+ 103   5                    ++*subtask; // don't release yet, still needs confirmation from subsystem
+ 104   5                else
+ 105   5                  release = 1; // message is corrupt and Mccif_localHandle_Override fails
+ 106   5                // at this point, either a release=1, or ++*subtask has been given
+ 107   5              } else
+ 108   4                release = 1; // smbus layer fail, or data format error
+C51 COMPILER V9.02   STATE_UPLINK                                                          07/21/2013 21:55:59 PAGE 3   
+
+ 109   4            }
+ 110   3            break;
+ 111   3          case 3:
+ 112   3            if (StateUtil_peek(&length, &release) == reply_success) {
+ 113   4              StateUplink_releaseAck(); // indicate to gnd station that uplink command has been received and rea
+             -ched target
+ 114   4              release = 1;
+ 115   4            }
+ 116   3            break;
+ 117   3          }
+ 118   2        } else
+ 119   1          release = 1; // comm hardware not powered up
+ 120   1        return release;
+ 121   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    832    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     16    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

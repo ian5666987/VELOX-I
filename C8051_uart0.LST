@@ -1,0 +1,221 @@
+C51 COMPILER V9.02   C8051_UART0                                                           05/20/2014 11:03:50 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_UART0
+OBJECT MODULE PLACED IN C8051_uart0.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_uart0.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          // adapted from CodeVision AVR by HP
+   3          
+   4          #define  interrupt(x)     interrupt x
+   5          
+   6          #include <c8051F120.h>
+   7          
+   8          #include "C8051_UART0.h"
+   9          
+  10          #define UART0_TX_TIMEOUT 1500 // expected minimum of 9600 baud rate. Timeout is twice of maximum time to t
+             -ransfer one byte in the specified baudrate
+  11          // the buffer and buffer size are set in the open function and shall not
+  12          // be changed until closing the uart
+  13          char* UART0_rx;
+  14          short UART0_rx_size;
+  15          char* UART0_tx;
+  16          short UART0_tx_size;
+  17          
+  18          // these are private variables managed by the uart
+  19          short UART0_rx_uart;
+  20          short UART0_rx_main;
+  21          volatile short UART0_rx_available;
+  22          
+  23          short UART0_tx_uart = 0;
+  24          short UART0_tx_main = 0;
+  25          volatile short UART0_tx_available = 0;
+  26          
+  27          char UART0_rx_errorCount = 0;
+  28          char UART0_tx_errorCount = 0;
+  29          
+  30          // private function
+  31          void UART0_resetRx() {
+  32   1        bit ES0_SAVE = ES0;
+  33   1        ES0 = 0;
+  34   1        UART0_rx_uart = 0;
+  35   1        UART0_rx_main = 0;
+  36   1        UART0_rx_available = 0;
+  37   1        ES0 = ES0_SAVE;
+  38   1      }
+  39          
+  40          void UART0_open(char* rx_buffer, short rx_size, char* tx_buffer, short tx_size, char p_uc_SSTA0) {
+  41   1        char SFRPAGE_SAVE = SFRPAGE;
+  42   1        UART0_rx = rx_buffer;
+  43   1        UART0_rx_size = rx_size;
+  44   1        UART0_tx = tx_buffer;
+  45   1        UART0_tx_size = tx_size;
+  46   1        UART0_close();
+  47   1        UART0_resetRx();
+  48   1      
+  49   1        SFRPAGE = UART0_PAGE;
+  50   1        //SCON0 Register (UART0 Control)
+  51   1        //Bits7–6:   SM00–SM10: Serial Port Operation Mode:
+  52   1        //Bit5:   SM20: Multiprocessor Communication Enable.
+  53   1        //Bit4:   REN0: Receive Enable.
+  54   1        //Bit1:   TI0: Transmit Interrupt Flag.
+C51 COMPILER V9.02   C8051_UART0                                                           05/20/2014 11:03:50 PAGE 2   
+
+  55   1        //Bit0:   RI0: Receive Interrupt Flag.
+  56   1        SCON0 = 0x50; //  0101 0000
+  57   1        //SSTA0 Register (UART0 Status and Clock Selection)
+  58   1        //Bit7:   FE0: Frame Error Flag.*
+  59   1        //Bit6:   RXOV0: Receive Overrun Flag.*
+  60   1        //Bit5:   TXCOL0: Transmit Collision Flag.*
+  61   1        //Bit4:   SMOD0: UART0 Baud Rate Doubler Enable
+  62   1        //Bits3–2:   UART0 Transmit Baud Rate Clock Selection Bits
+  63   1        //Bits1–0:   UART0 Receive Baud Rate Clock Selection Bits
+  64   1      
+  65   1        SSTA0 = p_uc_SSTA0; // typically 0000 1111 :: Clear all error flags, select Timer 4 overflow as TX and R
+             -X baud rate sources
+  66   1        //Indicate TX0 ready
+  67   1        TI0 = 0;
+  68   1        RI0 = 0;
+  69   1        ES0 = 1; // enable UART0 interrupt
+  70   1        SFRPAGE = SFRPAGE_SAVE;
+  71   1      }
+  72          
+  73          void UART0_close() {
+  74   1        char SFRPAGE_SAVE = SFRPAGE;
+  75   1        SFRPAGE = UART0_PAGE;
+  76   1        ES0 = 0; //
+  77   1        TI0 = 0;
+  78   1        RI0 = 0;
+  79   1        UART0_rx_available = 0;
+  80   1        UART0_tx_uart = 0;
+  81   1        SFRPAGE = SFRPAGE_SAVE;
+  82   1      }
+  83          
+  84          short UART0_getRxAvailable() {
+  85   1        short value;
+  86   1        bit ES0_SAVE = ES0;
+  87   1        ES0 = 0;
+  88   1        value = UART0_rx_available;
+  89   1        ES0 = ES0_SAVE;
+  90   1        return value;
+  91   1      }
+  92          
+  93          // returns false if not sufficient data in buffer
+  94          char UART0_pollChars(void* ptr, short length) {
+  95   1        char* message = ptr;
+  96   1        short count;
+  97   1        if (length <= UART0_getRxAvailable()) {
+  98   2          for (count = 0; count < length; ++count)
+  99   2            message[count] = UART0_rx[(UART0_rx_main + count) % UART0_rx_size];
+ 100   2          return 1;
+ 101   2        }
+ 102   1        return 0;
+ 103   1      }
+ 104          
+ 105          void UART0_advance(short length) {
+ 106   1        bit ES0_SAVE = ES0;
+ 107   1        ES0 = 0;
+ 108   1        UART0_rx_available -= length;
+ 109   1        UART0_rx_main += length;
+ 110   1        UART0_rx_main %= UART0_rx_size;
+ 111   1        ES0 = ES0_SAVE;
+ 112   1      }
+ 113          
+ 114          void UART0_putChar(char value) {
+ 115   1        char SAVE_SFRPAGE;
+C51 COMPILER V9.02   C8051_UART0                                                           05/20/2014 11:03:50 PAGE 3   
+
+ 116   1        short delay = 0;
+ 117   1        bit ES0_SAVE;
+ 118   1        while (UART0_tx_size <= UART0_tx_available && delay < UART0_TX_TIMEOUT)
+ 119   1          ++delay;
+ 120   1        if (UART0_tx_size <= UART0_tx_available) {
+ 121   2          ++UART0_tx_errorCount;
+ 122   2          return;
+ 123   2        }
+ 124   1        // only comes here if UART0_tx_available < UART0_tx_size
+ 125   1        // ---
+ 126   1        ES0_SAVE = ES0;
+ 127   1        ES0 = 0;
+ 128   1        if (UART0_tx_available) {
+ 129   2          UART0_tx[UART0_tx_main] = value;
+ 130   2          ++UART0_tx_main;
+ 131   2          if (UART0_tx_main == UART0_tx_size)
+ 132   2            UART0_tx_main = 0;
+ 133   2          ++UART0_tx_available; //increase this before any transmission
+ 134   2        } else {
+ 135   2          SAVE_SFRPAGE = SFRPAGE;
+ 136   2          SFRPAGE = UART0_PAGE;
+ 137   2          ++UART0_tx_available; //increase this before any transmission
+ 138   2          SBUF0 = value;
+ 139   2          SFRPAGE = SAVE_SFRPAGE;
+ 140   2        }
+ 141   1        ES0 = ES0_SAVE;
+ 142   1      }
+ 143          
+ 144          void UART0_putChars(void* ptr, short length) {
+ 145   1        short count;
+ 146   1        char* message = (char*) ptr;
+ 147   1        for (count = 0; count < length; ++count)
+ 148   1          UART0_putChar(message[count]);
+ 149   1      }
+ 150          
+ 151          UART0_ISR() interrupt (4) {
+ 152   1        if (RI0 == 1) {
+ 153   2          RI0 = 0;
+ 154   2          // data will be loaded in SBUF0 if
+ 155   2          // RI0 == 0 && (SM20 == 1 => StopBit == 1)
+ 156   2          if (SSTA0 & 0xC0) { // 0xC0 = 1100 0000 frame error and receiver overflow
+ 157   3            ++UART0_rx_errorCount;
+ 158   3            SSTA0 &= 0x3F; // Clear FE0 & RXOV0 flags
+ 159   3          } else {
+ 160   3            UART0_rx[UART0_rx_uart] = SBUF0; // Read a character from UART0 Data Buffer
+ 161   3            ++UART0_rx_uart;
+ 162   3            if (UART0_rx_uart == UART0_rx_size)
+ 163   3              UART0_rx_uart = 0;
+ 164   3            ++UART0_rx_available;
+ 165   3          }
+ 166   2        }
+ 167   1        if (TI0 == 1) { // cause of interrupt: previous tx is finished
+ 168   2          TI0 = 0;
+ 169   2          if (SSTA0 & 0x20) { // tx collision error
+ 170   3            ++UART0_tx_errorCount;
+ 171   3            SSTA0 &= 0xDF;
+ 172   3          }
+ 173   2          --UART0_tx_available; // Decrease array size
+ 174   2          if (UART0_tx_available) { // If buffer not empty
+ 175   3            SBUF0 = UART0_tx[UART0_tx_uart]; // Transmit
+ 176   3            ++UART0_tx_uart; // Update counter
+ 177   3            if (UART0_tx_uart == UART0_tx_size)
+C51 COMPILER V9.02   C8051_UART0                                                           05/20/2014 11:03:50 PAGE 4   
+
+ 178   3              UART0_tx_uart = 0;
+ 179   3          }
+ 180   2        }
+ 181   1      }
+ 182          
+ 183          char UART0_getRxErrorCount() {
+ 184   1        return UART0_rx_errorCount;
+ 185   1      }
+ 186          
+ 187          char UART0_getTxErrorCount() {
+ 188   1        return UART0_tx_errorCount;
+ 189   1      }
+ 190          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1234    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     65    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      4    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

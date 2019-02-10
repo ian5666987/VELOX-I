@@ -1,0 +1,58 @@
+C51 COMPILER V9.02   C8051_UART0TIMER4                                                     05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_UART0TIMER4
+OBJECT MODULE PLACED IN C8051_UART0Timer4.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_UART0Timer4.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          sfr16 RCAP4 = 0xCA; // Timer 4 reload register
+   6          sfr16 TMR4 = 0xCC; // Timer 4 register
+   7          
+   8          // Input: sys_clk : system clock
+   9          // baudrate : desired baudrate to be set
+  10          // Function: Used for UART0 baudrate generator
+  11          void UART0Timer4_init(long sys_clk, long baudrate) {
+  12   1        char SFRPAGE_SAVE = SFRPAGE; // Save current SFR page
+  13   1        short timer4_reload;
+  14   1      
+  15   1        //Switch to Timer 4
+  16   1        SFRPAGE = TMR4_PAGE;
+  17   1      
+  18   1        //Timer 4 in 16-bit auto-reload up timer mode
+  19   1        TMR4CN = 0x00;
+  20   1      
+  21   1        //SYSCLK is time base; no output, up count only
+  22   1        TMR4CF = 0x08;
+  23   1        timer4_reload = (float) sys_clk / baudrate / 16 + 0.5;
+  24   1        RCAP4 = -(timer4_reload);
+  25   1      
+  26   1        TMR4 = RCAP4;
+  27   1      
+  28   1        EIE2 &= 0xFB; //to disble T4 int, added by SWL 19 Mar 12
+  29   1        //Start Timer 4
+  30   1        TR4 = 1;
+  31   1      
+  32   1        //Restore SFRPAGE
+  33   1        SFRPAGE = SFRPAGE_SAVE;
+  34   1      }
+  35          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    155    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     11    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

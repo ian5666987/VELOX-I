@@ -1,0 +1,92 @@
+C51 COMPILER V9.02   OBDH_RECON                                                            05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_RECON
+OBJECT MODULE PLACED IN obdh_recon.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_recon.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "sdcard_redundant.h"
+   4          
+   5          #include "Velox_timertask.h"
+   6          #include "Velox_uart.h"
+   7          #include "Velox_uptime.h"
+   8          
+   9          #include "shared_general.h"
+  10          #include "shared_pwrs.h"
+  11          
+  12          #include "comm_generic.h"
+  13          
+  14          #include "obdh_globalvariables.h"
+  15          
+  16          #define  PWRS_STARTUP_DELAY_SEC    2L  // require pwrs on for 2+1=3 sec until contact
+  17          #define  ADCS_STARTUP_DELAY_SEC    2  // require adcs on for 2+1=3 sec until contact
+  18          // ---
+  19          
+  20          char Subsystem_isAvailable(char address) {
+  21   1        switch (address) {
+  22   2        case OBDH_ADDRESS:
+  23   2          return 1;
+  24   2        case PWRS_ADDRESS:
+  25   2          return PWRS_STARTUP_DELAY_SEC < uptime.session;
+  26   2        case ADCS_ADDRESS:
+  27   2          return (g_us_obdh_channel_status & CHANNEL_MASK_ADS) && !g_c_adcsIsReadyIn; // brackets are required
+  28   2        }
+  29   1        return 0;
+  30   1      }
+  31          
+  32          char SDCard_isAvailable() {
+  33   1        return g_sdcard.isAvailable;
+  34   1      }
+  35          
+  36          extern Statetask g_statetask_ferryCam;
+  37          extern Statetask g_statetask_ferryXBee;
+  38          
+  39          void Recon_ChannelStatusUpdated_Event() {
+  40   1        unsigned short mask;
+  41   1        if ((g_us_obdh_channel_status & CHANNEL_MASK_ADS) == 0)
+  42   1          g_c_adcsIsReadyIn = ADCS_STARTUP_DELAY_SEC;
+  43   1        // ---
+  44   1        mask = CHANNEL_MASK_SBC | CHANNEL_MASK_CSFB;
+  45   1        if ((g_us_obdh_channel_status & mask) == mask)
+  46   1          Timertask_setRepeated(&g_statetask_ferryCam.task, g_statetask_ferryCam.task.delay);
+  47   1        else
+  48   1          Timertask_setDisabled(&g_statetask_ferryCam.task);
+  49   1        // ---
+  50   1        mask = CHANNEL_MASK_XBEE;
+  51   1        if ((g_us_obdh_channel_status & mask) == mask)
+  52   1          Timertask_setRepeated(&g_statetask_ferryXBee.task, g_statetask_ferryXBee.task.delay);
+  53   1        else
+  54   1          Timertask_setDisabled(&g_statetask_ferryXBee.task);
+  55   1        // ---
+C51 COMPILER V9.02   OBDH_RECON                                                            05/20/2014 11:03:52 PAGE 2   
+
+  56   1      }
+  57          
+  58          extern Timertask g_task_mccif;
+  59          
+  60          char Recon_isDebugPrintEnabled() {
+  61   1        return g_task_mccif.mode;
+  62   1      }
+  63          
+  64          void Recon_debugPrint(void* buffer, short length) {
+  65   1        if (g_task_mccif.mode)
+  66   1          Uart_putChars(MCCIF_UART, buffer, length);
+  67   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    335    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      8    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

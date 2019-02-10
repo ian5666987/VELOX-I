@@ -1,0 +1,57 @@
+C51 COMPILER V9.02   OBDH_EVENTS                                                           05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_EVENTS
+OBJECT MODULE PLACED IN obdh_events.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_events.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <stdio.h>
+   4          #include <string.h>
+   5          
+   6          #include "c8051_SMBus.h"
+   7          #include "C8051_SMBusSpy.h"
+   8          
+   9          #include "Velox_delay.h"
+  10          
+  11          #include "mccif_spy.h"
+  12          #include "mccif_xdata.h"
+  13          
+  14          #include "obdh_globalvariables.h"
+  15          #include "obdh_schedule.h"
+  16          
+  17          #include "hash_manifest.h"
+  18          
+  19          void Mccif_setCompleted_Override(short offset) {
+  20   1        offset += 0;
+  21   1        Schedule_handleAdd();
+  22   1      }
+  23          
+  24          void State_timeout_Override(State* state) {
+  25   1        State* dummy = state; // to suppress warnings
+  26   1        // can take action here if desired
+  27   1        printf("state timeout ");
+  28   1      }
+  29          
+  30          // called every 2-4 minutes
+  31          void Uptime_storeVitals_Override() {
+  32   1        Hash_writeManifest();
+  33   1        printf("store vitals ");
+  34   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     68    ----
+   CONSTANT SIZE    =     29    ----
+   XDATA SIZE       =      8    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,153 @@
+C51 COMPILER V9.02   HASH_MANIFEST                                                         05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE HASH_MANIFEST
+OBJECT MODULE PLACED IN hash_manifest.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE hash_manifest.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "Velox_meta.h"
+   6          #include "Velox_uptime.h"
+   7          
+   8          #include "sdcard_redundant.h"
+   9          
+  10          #include "mccif_spy.h"
+  11          #include "mccif_xdata.h"
+  12          
+  13          #include "shared_obdh.h"
+  14          
+  15          #include "hash_blob.h"
+  16          #include "hash_frame.h"
+  17          #include "hash_util.h"
+  18          
+  19          #include "obdh_constant.h"
+  20          #include "obdh_globalvariables.h"
+  21          #include "obdh_trxuv.h"
+  22          
+  23          #define MANIFEST_PEEK(ptr, num) \
+  24            memcpy(ptr, xdata_txbuffer + MCCIF_DATA_OFFSET + size, num); \
+  25            size += num
+  26          
+  27          extern short g_s_BinaryId;
+  28          
+  29          volatile char manifest_reset_incr = 1;
+  30          
+  31          //unsigned long Hash_addressManifest() {
+  32          //  unsigned long time = uptime.tai_time;
+  33          //  time /= g_manifest.divider; // safety measure to prevent out of bounds/"pages" access, however does no
+             -t alter value of frameIndex->page (because no immediate need)
+  34          //  return g_manifest.offset + time % 32;
+  35          //}
+  36          
+  37          // failure is not an option
+  38          void Hash_readManifest() {
+  39   1              char success;
+  40   1              char capture;
+  41   1              short size = 0;
+  42   1              capture = g_sdcard.read.failures;
+  43   1              //TOSHOW the right way to do this is we should record the manifest. If it is the same offset then we don'
+             -t do anything.
+  44   1              //Else, if it is not the same offset, we should re-copy the value, because the manifest.offset would have
+             - been changed!
+  45   1              success = SDred_read(g_manifest.offset, xdata_txbuffer, sizeof xdata_txbuffer, g_manifest.copies); //TOSH
+             -OW there is a bug here!! It should be g_manifest.copies instead of g_hashFrame.copies!!
+  46   1              g_manifest.failures = g_sdcard.read.failures - capture;
+  47   1              if (success) {
+  48   2                      MANIFEST_PEEK(&uptime.total, 6);
+  49   2                      MANIFEST_PEEK(&chip_meta.totalResets, 4);
+  50   2                      MANIFEST_PEEK(&g_hashFrame, sizeof g_hashFrame);
+  51   2                      MANIFEST_PEEK(&g_hashBlob, sizeof g_hashBlob);
+C51 COMPILER V9.02   HASH_MANIFEST                                                         05/20/2014 11:03:51 PAGE 2   
+
+  52   2                      MANIFEST_PEEK(&g_putFrame.frameIndex.page, sizeof g_putFrame.frameIndex.page);
+  53   2                      // --- 5
+  54   2                      MANIFEST_PEEK(&g_putFrame.task.delay, sizeof g_putFrame.task.delay); //to store all the important data!!
+             - ian: updated on 20140207
+  55   2                      MANIFEST_PEEK(&g_putFrame.mask, sizeof g_putFrame.mask); //to store all the important data!! ian: update
+             -d on 20140207
+  56   2                      MANIFEST_PEEK(&g_getFrame.mask, sizeof g_getFrame.mask); //to store all the important data!! ian: update
+             -d on 20140207
+  57   2                      MANIFEST_PEEK(&g_sendAck.uplinkId, sizeof g_sendAck.uplinkId);
+  58   2                      MANIFEST_PEEK(&g_rtHk.template, sizeof g_rtHk.template);
+  59   2                      // --- 10
+  60   2                      MANIFEST_PEEK(&g_s_BinaryId, sizeof g_s_BinaryId);
+  61   2                      MANIFEST_PEEK(&g_trxuv.rateCW, sizeof g_trxuv.rateCW);
+  62   2                      MANIFEST_PEEK(&g_trxuv.runtime.delay, sizeof g_trxuv.runtime.delay);
+  63   2                      MANIFEST_PEEK(&g_sdcard.write, sizeof g_sdcard.write);
+  64   2                      MANIFEST_PEEK(&g_sdcard.read, sizeof g_sdcard.read);
+  65   2                      // --- 15
+  66   2                      MANIFEST_PEEK(&g_slow_beacon.mode, sizeof g_slow_beacon.mode);
+  67   2                      // --- 16
+  68   2                      // ---
+  69   2                      if (manifest_reset_incr) {
+  70   3                              chip_meta.totalResets += manifest_reset_incr;
+  71   3                              uptime.total += uptime.session;
+  72   3                      }
+  73   2                      manifest_reset_incr = 0;
+  74   2                      g_rtHk.template &= XDATSEG_FULLMASK;
+  75   2              } else {
+  76   2                      // in case of failure, default values are used
+  77   2              }
+  78   1      }
+  79          
+  80          #define MANIFEST_POKE(ptr, num) \
+  81              memcpy(g_c_BinaryContent + size, ptr, num); \
+  82              size += num
+  83          
+  84          // harmless reuse of memory, since cqt always load total chunk and immediately processes the data subseque
+             -ntly
+  85          extern char g_c_BinaryContent[CQT_RAWDATA];
+  86          
+  87          void Hash_writeManifest() {
+  88   1              short length;
+  89   1              short size = 0;
+  90   1              // ---
+  91   1              MANIFEST_POKE(&uptime.total, 6);
+  92   1              MANIFEST_POKE(&chip_meta.totalResets, 4);
+  93   1              MANIFEST_POKE(&g_hashFrame, sizeof g_hashFrame);
+  94   1              MANIFEST_POKE(&g_hashBlob, sizeof g_hashBlob);
+  95   1              MANIFEST_POKE(&g_putFrame.frameIndex.page, sizeof g_putFrame.frameIndex.page);
+  96   1              // --- 5
+  97   1              MANIFEST_POKE(&g_putFrame.task.delay, sizeof g_putFrame.task.delay); //to store all the important data!! 
+             -ian: updated on 20140207
+  98   1              MANIFEST_POKE(&g_putFrame.mask, sizeof g_putFrame.mask); //to store all the important data!! ian: updated
+             - on 20140207
+  99   1              MANIFEST_POKE(&g_getFrame.mask, sizeof g_getFrame.mask); //to store all the important data!! ian: updated
+             - on 20140207
+ 100   1              MANIFEST_POKE(&g_sendAck.uplinkId, sizeof g_sendAck.uplinkId);
+ 101   1              MANIFEST_POKE(&g_rtHk.template, sizeof g_rtHk.template);
+ 102   1              // --- 10
+ 103   1              MANIFEST_POKE(&g_s_BinaryId, sizeof g_s_BinaryId);
+ 104   1              MANIFEST_POKE(&g_trxuv.rateCW, sizeof g_trxuv.rateCW);
+ 105   1              MANIFEST_POKE(&g_trxuv.runtime.delay, sizeof g_trxuv.runtime.delay);
+ 106   1              MANIFEST_POKE(&g_sdcard.write, sizeof g_sdcard.write);
+C51 COMPILER V9.02   HASH_MANIFEST                                                         05/20/2014 11:03:51 PAGE 3   
+
+ 107   1              MANIFEST_POKE(&g_sdcard.read, sizeof g_sdcard.read);
+ 108   1              // --- 15
+ 109   1              MANIFEST_POKE(&g_slow_beacon.mode, sizeof g_slow_beacon.mode);
+ 110   1              // --- 16
+ 111   1              // ---
+ 112   1              length = Mccif_formatContent(XDATA_OBDH_CQTDATA_OFFSET, size, xdata_txbuffer);
+ 113   1              SDred_write(g_manifest.offset, xdata_txbuffer, length, g_manifest.copies);
+ 114   1      }
+ 115          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   2370    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      9    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

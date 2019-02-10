@@ -1,0 +1,54 @@
+C51 COMPILER V9.02   DELAY                                                                 10/30/2012 12:32:30 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE DELAY
+OBJECT MODULE PLACED IN delay.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE delay.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND TABS(3)
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          #include <intrins.h>
+   5          #include "delay.h"
+   6          
+   7          // Delay functions design to delay by 1us. Call Format : delay_us(Number)
+   8          // function: delay for (l_us_us_count) micro-seconds
+   9          // note: l_us_us_count = l_us_us_count/2;
+  10          // this estimation is gotten by testing the delay using
+  11          // an oscilloscope for many inputs of l_us_us_count, and provides
+  12          // a rough estimate of doing micro-seconds delay
+  13          void delay_us(unsigned short l_us_us_count) {
+  14   1        l_us_us_count = l_us_us_count / 2;
+  15   1        while (l_us_us_count != 0)
+  16   1          --l_us_us_count;
+  17   1      }
+  18          
+  19          // Delay functions design to delay by 1ms. Call Format : delay_ms(Number)
+  20          //   function: delay for (l_us_ms_count) micro-seconds
+  21          //   The number 415 in the function is gotten by testing the delay using
+  22          //   an oscilloscope for many inputs of l_us_ms_count, and provides
+  23          //   a rough estimate of doing micro-seconds delay
+  24          void delay_ms(unsigned short l_us_ms_count) {
+  25   1        unsigned short l_us_delay;
+  26   1        while (l_us_ms_count != 0) {
+  27   2          for (l_us_delay = 0; l_us_delay < 415; l_us_delay++)
+  28   2            _nop_();
+  29   2          --l_us_ms_count;
+  30   2        }
+  31   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    129    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      6    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

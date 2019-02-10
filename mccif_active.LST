@@ -1,0 +1,69 @@
+C51 COMPILER V9.02   MCCIF_ACTIVE                                                          05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE MCCIF_ACTIVE
+OBJECT MODULE PLACED IN mccif_active.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE mccif_active.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          #include <string.h>
+   5          
+   6          #include "Velox_checksum.h"
+   7          
+   8          #include "mccif_xdata.h"
+   9          
+  10          // --- MCCIF_ID_SET
+  11          
+  12          short Mccif_formatSet(char system, short offset, short length, void* value, char* message) {
+  13   1        unsigned short check;
+  14   1        memcpy(message, mccif_xdatMarker, sizeof mccif_xdatMarker);
+  15   1        message[4] = MCCIF_ID_SET;
+  16   1        message[5] = system;
+  17   1        message[6] = offset >> 8; // address hi
+  18   1        message[7] = offset; // address lo
+  19   1        message[8] = length; // length lo
+  20   1        memcpy(&message[MCCIF_DATA_OFFSET], value, length);
+  21   1        check = Checksum_publish(Checksum_update(message, MCCIF_DATA_OFFSET + length, 0));
+  22   1        memcpy(&message[MCCIF_DATA_OFFSET + length], &check, 2);
+  23   1        return MCCIF_DATA_OFFSET + length + 2;
+  24   1      }
+  25          
+  26          // --- MCCIF_ID_REQUEST
+  27          
+  28          short Mccif_formatRequest(char system, short offset, short length, char* message) {
+  29   1        unsigned short check;
+  30   1        memcpy(message, mccif_xdatMarker, sizeof mccif_xdatMarker);
+  31   1        message[4] = MCCIF_ID_REQUEST;
+  32   1        message[5] = mccif_localSystem;
+  33   1        message[6] = 0;
+  34   1        message[7] = 0;
+  35   1        message[8] = 5;
+  36   1        message[MCCIF_DATA_OFFSET + 0] = system; // receiver id
+  37   1        message[MCCIF_DATA_OFFSET + 1] = offset >> 8; // address hi
+  38   1        message[MCCIF_DATA_OFFSET + 2] = offset; // address lo
+  39   1        message[MCCIF_DATA_OFFSET + 3] = length; // length lo
+  40   1        check = Checksum_publish(Checksum_update(message, MCCIF_DATA_OFFSET + 4, 0));
+  41   1        memcpy(&message[MCCIF_DATA_OFFSET + 4], &check, 2);
+  42   1        return MCCIF_DATA_OFFSET + 4 + 2;
+  43   1      }
+  44          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    779    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     23    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+C51 COMPILER V9.02   MCCIF_ACTIVE                                                          05/20/2014 11:03:51 PAGE 2   
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

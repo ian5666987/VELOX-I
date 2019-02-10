@@ -1,0 +1,111 @@
+C51 COMPILER V9.02   VELOX_CHECKSUM                                                        05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_CHECKSUM
+OBJECT MODULE PLACED IN Velox_checksum.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_checksum.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "Velox_checksum.h"
+   6          
+   7          // depending on the requirements: speed vs. memory
+   8          // the application can choose to use the fast table lookup
+   9          // of perform the computation when needed
+  10          #define CHECKSUM_LOOKUP   // comment or uncomment this line as needed
+  11          // ---
+  12          #ifdef CHECKSUM_LOOKUP
+  13          #define CHECKSUM_SIZE   256
+  14          unsigned short xdata checksum_lookup[CHECKSUM_SIZE];
+  15          #else
+              unsigned short checksum_ply = 0x8005; // only default value, can be set by init
+              #endif
+  18          
+  19          void Checksum_init(unsigned short ply) {
+  20   1      #ifdef CHECKSUM_LOOKUP
+  21   1        unsigned char phi = ply >> 8;
+  22   1        unsigned char ctr[8];
+  23   1        unsigned char c0;
+  24   1        unsigned char top;
+  25   1        unsigned short crc;
+  26   1        unsigned short c1;
+  27   1        for (c1 = 0; c1 < CHECKSUM_SIZE; ++c1) {
+  28   2          top = c1;
+  29   2          for (c0 = 0; c0 < 8; ++c0)
+  30   2            if (top & 0x80) { // Check top bit of the register
+  31   3              top = ((top << 1) & 0xFE) ^ phi;
+  32   3              ctr[c0] = 1;
+  33   3            } else {
+  34   3              top <<= 1;
+  35   3              ctr[c0] = 0;
+  36   3            }
+  37   2          crc = 0;
+  38   2          for (c0 = 0; c0 < 8; ++c0)
+  39   2            if (ctr[c0]) // if the control bit is one
+  40   2              crc ^= ply << (7 - c0);
+  41   2          checksum_lookup[c1] = crc;
+  42   2        }
+  43   1      #else
+                checksum_ply = ply;
+              #endif
+  46   1      }
+  47          
+  48          // private function (only visible to checksum.c)
+  49          unsigned short Checksum_rotate(unsigned short crc, unsigned char value) {
+  50   1      #ifdef CHECKSUM_LOOKUP
+  51   1        return ((crc << 8) + value) ^ checksum_lookup[(crc >> 8) & 0xFF];
+  52   1      #else
+                // this is the 'slower' computation, keep as memory efficient alternative:
+                char l_c_c1;
+                unsigned short l_us_top;
+C51 COMPILER V9.02   VELOX_CHECKSUM                                                        05/20/2014 11:03:53 PAGE 2   
+
+                for (l_c_c1 = 0; l_c_c1 < 8; l_c_c1++) {
+                  l_us_top = crc & 0x8000;
+                  crc = (crc << 1) + ((value >> (7 - l_c_c1)) & 1);
+                  if (l_us_top)
+                  crc ^= checksum_ply;
+                }
+                return crc;
+              #endif
+  64   1      }
+  65          
+  66          // in the first call to Checksum_update, the parameter crc represents the seed
+  67          unsigned short Checksum_update(void* msg, short length, unsigned short crc) {
+  68   1        short count = 0;
+  69   1        char* message = (char*) msg;
+  70   1        for (count = 0; count < length; ++count)
+  71   1          crc = Checksum_rotate(crc, message[count]);
+  72   1        return crc;
+  73   1      }
+  74          
+  75          //To be used to create the final CRC
+  76          unsigned short Checksum_publish(unsigned short crc) {
+  77   1        crc = Checksum_rotate(crc, 0);
+  78   1        crc = Checksum_rotate(crc, 0);
+  79   1        return crc;
+  80   1      }
+  81          
+  82          // parameter length includes 2 bytes of crc. If the result of checksum publish is 0, then checksum us vali
+             -d (1)
+  83          char Checksum_isValid(void* msg, short length) {
+  84   1        return 0 == Checksum_publish(Checksum_update(msg, length, 0)); // return 0 if invalid
+  85   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    697    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =    551    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

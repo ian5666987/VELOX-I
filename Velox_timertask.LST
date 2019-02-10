@@ -1,0 +1,85 @@
+C51 COMPILER V9.02   VELOX_TIMERTASK                                                       05/20/2014 11:03:53 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE VELOX_TIMERTASK
+OBJECT MODULE PLACED IN Velox_timertask.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE Velox_timertask.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include "Velox_timertask.h"
+   4          
+   5           // Timertask_setDisabled is implemented so that it suits the situation as often as possible
+   6          void Timertask_setDisabled(Timertask* task) {
+   7   1        task->mode = timertask_disabled;
+   8   1      }
+   9          
+  10          void Timertask_setExecuteOnce(Timertask* task, unsigned short delay) {
+  11   1        task->from_clock = Timertask_getClock_Override();
+  12   1        task->delay = delay;
+  13   1        task->mode = timertask_executeOnce;
+  14   1      }
+  15          
+  16          void Timertask_setPeriodic(Timertask* task, unsigned short delay) {
+  17   1        task->from_clock = Timertask_getClock_Override();
+  18   1        task->delay = delay;
+  19   1        task->mode = timertask_periodic;
+  20   1      }
+  21          
+  22          void Timertask_setRepeated(Timertask* task, unsigned short delay) {
+  23   1        task->from_clock = Timertask_getClock_Override();
+  24   1        task->delay = delay;
+  25   1        task->mode = timertask_repeated;
+  26   1      }
+  27          
+  28          // Timertask_fromNow is typically used to postpone the next task execution,
+  29          // since subsequently the full delay is required to elapse
+  30          // Examples: watch-dog mechanisms, prevent state buildups, ...
+  31          void Timertask_fromNow(Timertask* task) {
+  32   1        task->from_clock = Timertask_getClock_Override();
+  33   1      }
+  34          
+  35          char Timertask_isReady(Timertask* task) {
+  36   1        unsigned short delta;
+  37   1        unsigned short timertask_clock = Timertask_getClock_Override();
+  38   1        if (task->mode == timertask_disabled) {
+  39   2          task->from_clock = timertask_clock;
+  40   2        } else {
+  41   2          delta = timertask_clock - task->from_clock;
+  42   2          if (task->delay <= delta) {
+  43   3            switch (task->mode) {
+  44   4            case timertask_executeOnce:
+  45   4              task->from_clock = timertask_clock;
+  46   4              task->mode = timertask_disabled;
+  47   4              break;
+  48   4            case timertask_periodic:
+  49   4              task->from_clock += task->delay; // equation to compensate lag
+  50   4              break;
+  51   4            case timertask_repeated:
+  52   4              task->from_clock = timertask_clock; // ignore any lag; pretend you are on time, and next execution
+             - is in 'delay' ms
+  53   4              break;
+  54   4            }
+C51 COMPILER V9.02   VELOX_TIMERTASK                                                       05/20/2014 11:03:53 PAGE 2   
+
+  55   3            return 1;
+  56   3          }
+  57   2        }
+  58   1        return 0;
+  59   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    658    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     28    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

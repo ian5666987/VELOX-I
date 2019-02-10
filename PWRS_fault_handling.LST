@@ -1,0 +1,161 @@
+C51 COMPILER V9.02   PWRS_FAULT_HANDLING                                                   12/28/2012 14:31:20 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_FAULT_HANDLING
+OBJECT MODULE PLACED IN PWRS_fault_handling.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_fault_handling.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael maintained by BX
+   2          
+   3          #include <c8051F120.h>
+   4          #include "C8051_delay.h"
+   5          #include "Velox_raid.h"
+   6          #include "Velox_sfrstack.h"
+   7          #include "Velox_delay.h"
+   8          #include "PWRS_port.h"
+   9          #include "PWRS_mppt.h"
+  10          #include "PWRS_main.h"
+  11          #include "PWRS_extern_data.h"
+  12          #include "PWRS_fault_handling.h"
+  13          #include "PWRS_constant.h"
+  14          #include "PWRS_thermal.h"
+  15          #include "PWRS_load.h"
+  16          
+  17          // SET_5V_Redundacy
+  18          // Parameters   : char 1 - Select SDC1 (Main)
+  19          //          char 2 - SDC2 (Redundacy)
+  20          //          Delay - Delay value when switching to mode 2 (only used in Mode 2)
+  21          void Fault_set5VRedundancy(unsigned char SDC_Mode) {
+  22   1      //Channel 1: Main 5V SDC (With MOSFET configuration)
+  23   1      //Channel 2: Redundacy 5V SDC (With Schottky Diode configuration)
+  24   1      //From main to redundacy SDC, delay at least 1s to ensure that charge across the MOSFET is depleted
+  25   1      
+  26   1        Fault_set5VRedundancyPreparation();
+  27   1      
+  28   1        SFR_pushPage(CONFIG_PAGE);
+  29   1        //Switch SDC
+  30   1        if (SDC_Mode == redundant_sdc) { // if set SDC mode 2
+  31   2          g_uc_5V_SDC_STATUS = redundant_sdc; //update self defined register
+  32   2          Delay_blockMs(g_us_SDC_Delay); // TODO try with Velox_delay method
+  33   2          EN_SDC_1 = 0; //Main SDC with MOSFET
+  34   2          EN_SDC_2 = 1; //Redundacy SDC with Schottky Diode
+  35   2        } else { // any other condition, treat SDC as mode 1
+  36   2          g_uc_5V_SDC_STATUS = main_sdc; //update self defined register
+  37   2          EN_SDC_1 = 1; //Main SDC with MOSFET (change)
+  38   2          EN_SDC_2 = 0; //Redundacy SDC with Schottky Diode (change)
+  39   2        }
+  40   1        SFR_popPage();
+  41   1      
+  42   1        //swl: 28 dec: turn on acs after switching
+  43   1        Load_setSingleOutputNow(ACSYS, 1); //Turn ACS on for batt board buff
+  44   1      
+  45   1        SFR_pushPage(PCA0_PAGE);
+  46   1        CR = 1; // enable PWM output
+  47   1        PCA0CPM0 = 0x42; //Set as 0x42 for 8 bit mode
+  48   1        PCA0CPM1 = 0x42; //Set as 0x42 for 8 bit mode
+  49   1        PCA0CPM2 = 0x42; //Set as 0x42 for 8 bit mode
+  50   1        SFR_popPage();
+  51   1      
+  52   1        Mppt_setMode(g_uc_MPPT_MODE); //revert MPPT mode back to original
+  53   1      }
+  54          
+  55          #define REBOOT_CONTROL(EN,FLT,i) \
+C51 COMPILER V9.02   PWRS_FAULT_HANDLING                                                   12/28/2012 14:31:20 PAGE 2   
+
+  56          if (EN != 0) {\
+  57            if (FLT == 0) {  /*if trip*/ \
+  58              g_uc_LATCH_COUNT[i] = Raid_read(EEPROM_ADDR_LATCH_COUNT0 + i); /*Update values in EEPROM if trip*/ \
+  59              g_uc_LATCH_COUNT[i]++; \
+  60              Raid_write(EEPROM_ADDR_LATCH_COUNT0 + i, g_uc_LATCH_COUNT[i]); \
+  61              g_uc_IMMED_LATCH_COUNT_CH[i]++; /*everytime trips, intermediate latch value + 1*/ \
+  62              if (g_uc_IMMED_LATCH_COUNT_CH[i] <= REBOOT_LIMIT) { \
+  63                EN = 0; /*turn off immediately*/ \
+  64              Load_setSingleOutputScheduled(i, 1, AUTO_REBOOT_DELAY_DURATION); /*reset in 1s*/ \
+  65              } else { /*more then 10 tries off*/ \
+  66                g_uc_IMMED_LATCH_COUNT_CH[i] = 0; \
+  67                EN = 0; /*turn off immediately*/ \
+  68              } \
+  69            } else { /*no trip*/ \
+  70              g_uc_IMMED_LATCH_COUNT_CH[i] = 0; /*Ensure that intermedate latch count is zero*/ \
+  71            } \
+  72          }
+  73          
+  74          void Fault_handling() {
+  75   1      // BEGIN: added the following checks for auto reboot channel if trip
+  76   1        SFR_pushPage(CONFIG_PAGE);
+  77   1        if (g_uc_AUTO_REBOOT_LATCH) {
+  78   2          REBOOT_CONTROL(EN_5_ADS, FLT_5V_ADS, ADSYS)
+  79   2          REBOOT_CONTROL(EN_5_ACS, FLT_5V_ACS, ACSYS)
+  80   2          REBOOT_CONTROL(EN_5_PAYL, FLT_5V_PAYL, PAYLOAD)
+  81   2          REBOOT_CONTROL(EN_5_DEPL, FLT_5V_DEPL, DEPLOYM)
+  82   2        }
+  83   1      // END: added the above checks for auto reboot chan if trip
+  84   1      
+  85   1      // ------------CHECK SDC----------------------------------------
+  86   1        if (g_us_PCC_V < g_us_SDC_LOWER_LIMIT)
+  87   1          if (EN_SDC_1) {
+  88   2            Fault_set5VRedundancy(redundant_sdc); //if trip, set to mode 2 with delay of 5 seconds
+  89   2          } else if (EN_SDC_2) {
+  90   2            Fault_set5VRedundancy(main_sdc); //if trip, set to mode 1
+  91   2          }
+  92   1        // this portion solely for testing SDC switching with SW
+  93   1        if (g_uc_CHANGE_SDC_TO_MODE_1_TEST) {
+  94   2          Fault_set5VRedundancy(main_sdc);
+  95   2          g_uc_CHANGE_SDC_TO_MODE_1_TEST = 0;
+  96   2        } else if (g_uc_CHANGE_SDC_TO_MODE_2_TEST) {
+  97   2          Fault_set5VRedundancy(redundant_sdc);
+  98   2          g_uc_CHANGE_SDC_TO_MODE_2_TEST = 0;
+  99   2        }
+ 100   1      
+ 101   1        SFR_popPage();
+ 102   1      // ---------CHECK SDC END----------------------------------------
+ 103   1      
+ 104   1      //---------To detect EEPROM Failure-----------------------------
+ 105   1      // if EEPROM failure flagged is raised, PWRS mode becomes 3
+ 106   1      
+ 107   1        // TODO this check ARG!!!
+ 108   1      //  if (g_uc_EEPROM_FAIL == 1)
+ 109   1      //    g_uc_PWRS_MODE = EEPROM_failed;
+ 110   1      }
+ 111          
+ 112          void Fault_set5VRedundancyPreparation() {
+ 113   1        Load_setOutputChannels(0x10); //ensure that all output latch is turn off except comms
+ 114   1      
+ 115   1        SFRPAGE = CONFIG_PAGE;
+ 116   1        EN_SDC_1 = 0; // Main SDC with MOSFET
+ 117   1        EN_SDC_2 = 0; // Redundacy SDC with Schottky Diode
+C51 COMPILER V9.02   PWRS_FAULT_HANDLING                                                   12/28/2012 14:31:20 PAGE 3   
+
+ 118   1      
+ 119   1        SFRPAGE = PCA0_PAGE;
+ 120   1        CR = 0; // disble all PWM outputs from satellite
+ 121   1        PCA0CPM0 = 0x40; //Set as 0x40 for 8 bit mode without turning on
+ 122   1        PCA0CPM1 = 0x40; //Set as 0x40 for 8 bit mode without turning on
+ 123   1        PCA0CPM2 = 0x40; //Set as 0x40 for 8 bit mode without turning on
+ 124   1        Thermal_setTkOutput(0, 0); //turn off PCA0CPM3 / TK1
+ 125   1        Thermal_setTkOutput(1, 0); //turn off PCA0CPM4 / TK2
+ 126   1        PCA0CPM5 = 0x40; //Set as 0x40 for 8 bit mode without turning on
+ 127   1      
+ 128   1        SFRPAGE = CONFIG_PAGE;
+ 129   1        PWM_SEL_1 = 0;
+ 130   1        PWM_SEL_2 = 0;
+ 131   1        AMUX_SEL_1 = 0; // SET AMUX_SEL = 0 in case of unknown state output from multiplexer IC
+ 132   1        AMUX_SEL_2 = 0; // SET AMUX_SEL = 0 in case of unknown state output from multiplexer IC
+ 133   1        AMUX_SEL_3 = 0; // SET AMUX_SEL = 0 in case of unknown state output from multiplexer IC
+ 134   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    629    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      1    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

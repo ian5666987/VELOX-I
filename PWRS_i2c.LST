@@ -1,0 +1,418 @@
+C51 COMPILER V9.02   PWRS_I2C                                                              12/28/2012 14:31:21 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE PWRS_I2C
+OBJECT MODULE PLACED IN PWRS_i2c.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE PWRS_i2c.c LARGE OPTIMIZE(0,SIZE) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          #include "C8051_SMBus.h"
+   5          #include "Velox_timertask.h"
+   6          #include "Mccif_xdata.h"
+   7          #include "PWRS_i2c.h"
+   8          #include "PWRS_enum_struct.h"
+   9          #include "PWRS_load.h"
+  10          #include "PWRS_extern_data.h"
+  11          #include "PWRS_constant.h"
+  12          #include "PWRS_mppt.h"
+  13          #include "PWRS_thermal.h"
+  14          #include "PWRS_reset.h"
+  15          #include "PWRS_battery.h"
+  16          #include "PWRS_camera.h"
+  17          
+  18          // must be in the global scope:
+  19          char i2c_rxData[I2C_RX_SIZE];
+  20          
+  21          // must be in the global scope but private:
+  22          char i2c_4ByteReply[4];
+  23          
+  24          // private function
+  25          void i2c_format4ByteReply(void* message, char length) {
+  26   1        memset(i2c_4ByteReply, 0, 4 - length);
+  27   1        memcpy(&i2c_4ByteReply[4 - length], message, length);
+  28   1        SMBus_setTxBuffer(i2c_4ByteReply, 4);
+  29   1      }
+  30          
+  31          void i2c_handler() {
+  32   1        char data_id;
+  33   1        unsigned char BATT_SOC_CHAR;
+  34   1      //  unsigned long l_ul_RESET_SAT_DELAY; // TODO this variable used to be used for use of whaaaat ?!?!
+  35   1      
+  36   1        // ----------------------------------------------
+  37   1        // i2r commands that "cause a reply"
+  38   1      
+  39   1        switch (i2c_rxData[0]) {
+  40   2        case 0x01: //GET_HK
+  41   2          SMBus_setTxBufferUnconstrained(&g_uc_SP_TEMP[0]);
+  42   2          break;
+  43   2      
+  44   2        case 0x02: //GET_SSCP
+  45   2          SMBus_setTxBufferUnconstrained(&g_uc_MPPT_MODE);
+  46   2          break;
+  47   2      
+  48   2        case 0x03: //GET_PWRS DATA
+  49   2          data_id = i2c_rxData[1];
+  50   2          switch (data_id) {
+  51   3          case 0x01:
+  52   3          case 0x02:
+  53   3          case 0x03:
+  54   3          case 0x04:
+  55   3          case 0x05:
+C51 COMPILER V9.02   PWRS_I2C                                                              12/28/2012 14:31:21 PAGE 2   
+
+  56   3            i2c_format4ByteReply(&g_uc_SP_TEMP[data_id - 0x01], 1);
+  57   3            break;
+  58   3      
+  59   3          case 0x06:
+  60   3          case 0x07:
+  61   3          case 0x08:
+  62   3            i2c_format4ByteReply(&g_us_PV_V[data_id - 0x06], 2);
+  63   3            break;
+  64   3      
+  65   3          case 0x09:
+  66   3          case 0x0A:
+  67   3          case 0x0B:
+  68   3            i2c_format4ByteReply(&g_us_PV_I[data_id - 0x09], 2);
+  69   3            break;
+  70   3      
+  71   3          case 0x0C:
+  72   3          case 0x0D:
+  73   3          case 0x0E:
+  74   3            i2c_format4ByteReply(&PVInput[data_id - 0x0C], 2);
+  75   3            break;
+  76   3      
+  77   3          case 0x0F:
+  78   3            i2c_format4ByteReply(&g_uc_MPPT_MODE, 1);
+  79   3            break;
+  80   3      
+  81   3          case 0x10:
+  82   3          case 0x11:
+  83   3            i2c_format4ByteReply(&g_us_BATT_V[data_id - 0x10], 2);
+  84   3            break;
+  85   3      
+  86   3          case 0x12:
+  87   3            i2c_format4ByteReply(&g_s_BATT_I, 2);
+  88   3            break;
+  89   3      
+  90   3          case 0x13:
+  91   3            BATT_SOC_CHAR = (unsigned char) (100 * g_f_BATT_SOC_FLOAT);
+  92   3            i2c_format4ByteReply(&BATT_SOC_CHAR, 1);
+  93   3            break;
+  94   3      
+  95   3          case 0x14:
+  96   3          case 0x15:
+  97   3            i2c_format4ByteReply(&g_uc_BATT_TEMP_RAW[data_id - 0x14], 1);
+  98   3            break;
+  99   3      
+ 100   3          case 0x16:
+ 101   3            i2c_format4ByteReply(&g_uc_BATT_HEATER, 1);
+ 102   3            break;
+ 103   3      
+ 104   3          case 0x17:
+ 105   3            i2c_format4ByteReply(&g_us_SYS_I, 2);
+ 106   3            break;
+ 107   3      
+ 108   3          case 0x18:
+ 109   3            i2c_format4ByteReply(&g_us_PCC_V, 2);
+ 110   3            break;
+ 111   3      
+ 112   3          case 0x19:
+ 113   3            i2c_format4ByteReply(&g_uc_5V_SDC_STATUS, 1);
+ 114   3            break;
+ 115   3      
+ 116   3          case 0x1A:
+ 117   3          case 0x1B:
+C51 COMPILER V9.02   PWRS_I2C                                                              12/28/2012 14:31:21 PAGE 3   
+
+ 118   3          case 0x1C:
+ 119   3          case 0x1D:
+ 120   3            i2c_format4ByteReply(&g_us_LOAD_V[data_id - 0x1A], 2);
+ 121   3            break;
+ 122   3      
+ 123   3          case 0x1E:
+ 124   3          case 0x1F:
+ 125   3          case 0x20:
+ 126   3          case 0x21:
+ 127   3            i2c_format4ByteReply(&g_us_LOAD_I[data_id - 0x1E], 2);
+ 128   3            break;
+ 129   3      
+ 130   3          case 0x22:
+ 131   3          case 0x23:
+ 132   3          case 0x24:
+ 133   3          case 0x25:
+ 134   3            i2c_format4ByteReply(&g_uc_LATCH_COUNT[data_id - 0x22], 1);
+ 135   3            break;
+ 136   3      
+ 137   3          case 0x26:
+ 138   3            i2c_format4ByteReply(&g_uc_CHANNEL_ENABLE, 1);
+ 139   3            break;
+ 140   3      
+ 141   3          case 0x27:
+ 142   3            i2c_format4ByteReply(&g_uc_RST_COUNT, 1); // TODO this should be long
+ 143   3            break;
+ 144   3      
+ 145   3          case 0x28:
+ 146   3            i2c_format4ByteReply(&g_uc_RST_CAUSE, 1);
+ 147   3            break;
+ 148   3      
+ 149   3          case 0x29:
+ 150   3            i2c_format4ByteReply(&g_uc_THERMAL_KNIFE, 1);
+ 151   3            break;
+ 152   3      
+ 153   3          case 0x2A:
+ 154   3            i2c_format4ByteReply(&g_us_FIRMWARE_VER, 1); // FIXME confirm byte count !?!?!
+ 155   3            break;
+ 156   3      
+ 157   3          case 0x2B:
+ 158   3            i2c_format4ByteReply(&g_uc_PWRS_MODE, 1);
+ 159   3            break;
+ 160   3      
+ 161   3          case 0x2D:
+ 162   3            i2c_format4ByteReply(&g_us_PWRS_I2C_CMD_DELAY, 2);
+ 163   3            break;
+ 164   3      
+ 165   3          case 0x2F:
+ 166   3            i2c_format4ByteReply(&g_s_PWRS_MCU_TEMP, 2);
+ 167   3            break;
+ 168   3      
+ 169   3          case 0x30:
+ 170   3            i2c_format4ByteReply(&g_uc_PWRS_SELF_TEST, 1);
+ 171   3            break;
+ 172   3      
+ 173   3          case 0x31:
+ 174   3            i2c_format4ByteReply(&g_uc_OBDH_REQ_CHANNEL_STATUS, 1);
+ 175   3            break;
+ 176   3      
+ 177   3          case 0x32:
+ 178   3            i2c_format4ByteReply(&g_uc_CHANNEL_STATUS, 1);
+ 179   3            break;
+C51 COMPILER V9.02   PWRS_I2C                                                              12/28/2012 14:31:21 PAGE 4   
+
+ 180   3      
+ 181   3          case 0x33:
+ 182   3            i2c_format4ByteReply(&g_uc_PWRS_SOCSW_ON, 1);
+ 183   3            break;
+ 184   3      
+ 185   3          case 0x34:
+ 186   3            i2c_format4ByteReply(&g_uc_PWRS_SOCSW_OFF, 1);
+ 187   3            break;
+ 188   3      
+ 189   3          case 0x35:
+ 190   3            // FIXME the input use to be long!!!, i,.e. redundancy_byte_counter =0 ;
+ 191   3            i2c_format4ByteReply(&g_str_PWRS_I2C_WDT.delay, 2);
+ 192   3            break;
+ 193   3      
+ 194   3          case 0x36:
+ 195   3            i2c_format4ByteReply(&g_us_I_BATT_REF, 2);
+ 196   3            break;
+ 197   3      
+ 198   3          case 0x37:
+ 199   3            i2c_format4ByteReply(&g_us_V_BATT, 2);
+ 200   3            break;
+ 201   3      
+ 202   3          case 0x38:
+ 203   3            i2c_format4ByteReply(&g_us_PS_UNREG, 2);
+ 204   3            break;
+ 205   3      
+ 206   3          case 0x39:
+ 207   3            i2c_format4ByteReply(&g_us_V_SYS, 2);
+ 208   3            break;
+ 209   3      
+ 210   3          case 0x3A:
+ 211   3            i2c_format4ByteReply(&g_us_PP_3V3, 2);
+ 212   3            break;
+ 213   3      
+ 214   3          case 0x3B:
+ 215   3            i2c_format4ByteReply(&g_us_V_PS_COMM, 2);
+ 216   3            break;
+ 217   3      
+ 218   3          case 0x3C:
+ 219   3            i2c_format4ByteReply(&g_us_I_PS_COMM, 2);
+ 220   3            break;
+ 221   3      
+ 222   3          case 0x3D:
+ 223   3            i2c_format4ByteReply(&g_us_V_3V3_PAYL, 2);
+ 224   3            break;
+ 225   3      
+ 226   3          case 0x3E:
+ 227   3            i2c_format4ByteReply(&g_us_OBDH_SENSE, 2);
+ 228   3            break;
+ 229   3      
+ 230   3          case 0x3F:
+ 231   3          case 0x40:
+ 232   3            i2c_format4ByteReply(&g_us_V_SDC[data_id - 0x3F], 2);
+ 233   3            break;
+ 234   3      
+ 235   3          case 0x41:
+ 236   3            i2c_format4ByteReply(&g_l_BATT_CHARGE, 0);
+ 237   3            break;
+ 238   3      
+ 239   3          default:
+ 240   3            break;
+ 241   3          }
+C51 COMPILER V9.02   PWRS_I2C                                                              12/28/2012 14:31:21 PAGE 5   
+
+ 242   2          break;
+ 243   2      
+ 244   2        // ----------------------------------------------
+ 245   2        // i2r commands that "take action"
+ 246   2      
+ 247   2        case 0x04: //SET BATT HT
+ 248   2          g_uc_BATT_HEATER = i2c_rxData[1];
+ 249   2          break;
+ 250   2      
+ 251   2        case 0x05: //SET OUTPUT
+ 252   2          g_uc_CHANNEL_ENABLE = i2c_rxData[1];
+ 253   2          g_uc_OBDH_REQ_CHANNEL_STATUS = (g_uc_CHANNEL_ENABLE & 0x3F); //update channel status desired bits
+ 254   2          Load_setOutputChannels(g_uc_CHANNEL_ENABLE);
+ 255   2          break;
+ 256   2      
+ 257   2        case 0x06: //SET SINGLE OUTPUT
+ 258   2          // (unsigned short) (rxData[3] << 8) + rxData[4];
+ 259   2          g_us_PWRS_I2C_CMD_DELAY = extractFromBuffer(unsigned short, i2c_rxData+3);
+ 260   2          Load_setSingleOutputScheduled(i2c_rxData[1], i2c_rxData[2], g_us_PWRS_I2C_CMD_DELAY);
+ 261   2      
+ 262   2          switch (i2c_rxData[1]) //Switch (Channel)
+ 263   2          {
+ 264   3          case 0: //to update desired bits in channel status register
+ 265   3            if (i2c_rxData[2] > 0) //if ON
+ 266   3              g_uc_OBDH_REQ_CHANNEL_STATUS |= 0x01; // TODO find out what is OBDH REQ CHANNEL
+ 267   3            else
+ 268   3              g_uc_OBDH_REQ_CHANNEL_STATUS &= 0xFE;
+ 269   3            break;
+ 270   3      
+ 271   3          case 1: //to update desired bits in channel status register
+ 272   3            if (i2c_rxData[2] > 0)
+ 273   3              g_uc_OBDH_REQ_CHANNEL_STATUS |= 0x02;
+ 274   3            else
+ 275   3              g_uc_OBDH_REQ_CHANNEL_STATUS &= 0xFD;
+ 276   3            break;
+ 277   3      
+ 278   3          case 2: //to update desired bits in channel status register
+ 279   3            if (i2c_rxData[2] > 0)
+ 280   3              g_uc_OBDH_REQ_CHANNEL_STATUS |= 0x04;
+ 281   3            else
+ 282   3              g_uc_OBDH_REQ_CHANNEL_STATUS &= 0xFB;
+ 283   3            break;
+ 284   3      
+ 285   3          case 3: //to update desired bits in channel status register
+ 286   3            if (i2c_rxData[2] > 0)
+ 287   3              g_uc_OBDH_REQ_CHANNEL_STATUS |= 0x08;
+ 288   3            else
+ 289   3              g_uc_OBDH_REQ_CHANNEL_STATUS &= 0xF7;
+ 290   3            break;
+ 291   3      
+ 292   3          case 4: //to update desired bits in channel status register
+ 293   3            if (i2c_rxData[2] > 0)
+ 294   3              g_uc_OBDH_REQ_CHANNEL_STATUS |= 0x10;
+ 295   3            else
+ 296   3              g_uc_OBDH_REQ_CHANNEL_STATUS &= 0xEF;
+ 297   3            break;
+ 298   3      
+ 299   3          case 5: //to update desired bits in channel status register
+ 300   3            if (i2c_rxData[2] > 0)
+ 301   3              g_uc_OBDH_REQ_CHANNEL_STATUS |= 0x20;
+ 302   3            else
+ 303   3              g_uc_OBDH_REQ_CHANNEL_STATUS &= 0xDF;
+C51 COMPILER V9.02   PWRS_I2C                                                              12/28/2012 14:31:21 PAGE 6   
+
+ 304   3            break;
+ 305   3      
+ 306   3          default:
+ 307   3            break;
+ 308   3          }
+ 309   2          break;
+ 310   2      
+ 311   2        case 0x07: //SET MPPT MODE
+ 312   2          Mppt_setMode(i2c_rxData[1]);
+ 313   2          break;
+ 314   2      
+ 315   2        case 0x08: //SET PV Volt
+ 316   2      //    SET_PV_VOLT(((unsigned short) (g_uc_SMB_DATA_IN_SLAVE[1] << 8) + g_uc_SMB_DATA_IN_SLAVE[2]),
+ 317   2      //        ((unsigned short) (g_uc_SMB_DATA_IN_SLAVE[3] << 8) + g_uc_SMB_DATA_IN_SLAVE[4]),
+ 318   2      //        ((unsigned short) (g_uc_SMB_DATA_IN_SLAVE[5] << 8) + g_uc_SMB_DATA_IN_SLAVE[6]));
+ 319   2      
+ 320   2          memcpy(&PVInput[0].g_us_PV_FV, &i2c_rxData[1], 2);
+ 321   2          memcpy(&PVInput[1].g_us_PV_FV, &i2c_rxData[3], 2);
+ 322   2          memcpy(&PVInput[2].g_us_PV_FV, &i2c_rxData[5], 2);
+ 323   2          Mppt_setMode(fv_userdefined); //PV volt used in MPPT mode 2, hence we set to MPPT mode 2
+ 324   2      
+ 325   2          break;
+ 326   2      
+ 327   2        case 0x09: //SET TK OUTPUT
+ 328   2          g_us_PWRS_I2C_CMD_DELAY = extractFromBuffer(unsigned short, i2c_rxData + 3);
+ 329   2          Thermal_setTkOutputScheduled(i2c_rxData[1], i2c_rxData[2], g_us_PWRS_I2C_CMD_DELAY);
+ 330   2          break;
+ 331   2      
+ 332   2        case 0x0A: //RESET PWRS
+ 333   2          g_us_PWRS_I2C_CMD_DELAY = extractFromBuffer(unsigned short, i2c_rxData + 1);
+ 334   2          Reset_pwrs_scheduled(g_us_PWRS_I2C_CMD_DELAY);
+ 335   2          break;
+ 336   2      
+ 337   2        case 0x0B: //RESET OBDH
+ 338   2          g_us_PWRS_I2C_CMD_DELAY = extractFromBuffer(unsigned short, i2c_rxData + 1);
+ 339   2          Reset_obdh_scheduled(g_us_PWRS_I2C_CMD_DELAY);
+ 340   2          break;
+ 341   2      
+ 342   2        case 0x0C: //SET SOC LIMIT
+ 343   2          Battery_setSocLimit(i2c_rxData[1], i2c_rxData[2]);
+ 344   2          break;
+ 345   2      
+ 346   2        case 0x0D: //Change OBDH WDT time //IanK added 20120316, for testing
+ 347   2          // TODO still need to test
+ 348   2          // FIXME this expects a long but we need a short!!!
+ 349   2          // FIXME really
+ 350   2          //    memcpy(&l_ul_RESET_SAT_DELAY, &SMBUS_rx[1], sizeof l_ul_RESET_SAT_DELAY);
+ 351   2          //the lower cut of limit for the g_ul_RESET_SAT_DELAY is constant(35000ms)
+ 352   2          // reload value from g_ul_RESET_SAT_DELAY to g_ul_PWRS_I2C_WDT counter
+ 353   2          //    g_str_PWRS_I2C_WDT.delay = max(g_us_RESET_SAT_DELAY_LOWER_BOUND, l_ul_RESET_SAT_DELAY);
+ 354   2          Timertask_fromNow(&g_str_PWRS_I2C_WDT);
+ 355   2          break;
+ 356   2      
+ 357   2        case 0x0E: //added by SWL for resetting EEProm to default values upon I2C command
+ 358   2          Reset_raid_counters();
+ 359   2          Reset_loadRaid(); // TODO we need to talk about the desired behavior
+ 360   2          break;
+ 361   2      
+ 362   2        case 0x0F: //added by SWL for To set SDC mode upon I2C command (testing purposes only, see fault handlin
+             -g)
+ 363   2          if (i2c_rxData[1] == 1) {
+ 364   3            g_uc_CHANGE_SDC_TO_MODE_1_TEST = 1;
+C51 COMPILER V9.02   PWRS_I2C                                                              12/28/2012 14:31:21 PAGE 7   
+
+ 365   3            // TODO safer to include g_uc_CHANGE_SDC_TO_MODE_2_TEST = 0; !? etc
+ 366   3            // explain what this sdc mode test does
+ 367   3          }
+ 368   2          if (i2c_rxData[1] == 2) {
+ 369   3            g_uc_CHANGE_SDC_TO_MODE_2_TEST = 1;
+ 370   3          }
+ 371   2          break;
+ 372   2        case 0x12:
+ 373   2          // TODO camera GET_DATA
+ 374   2          // SMBUS_setTxBuffer(g_c_camera_buffer0, 223); // dont use direct access
+ 375   2          break;
+ 376   2        case 0x13:
+ 377   2          Camera_acknowledge();
+ 378   2          break;
+ 379   2        default:
+ 380   2          break;
+ 381   2        }
+ 382   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1767    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =    110    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

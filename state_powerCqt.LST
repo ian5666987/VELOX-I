@@ -1,0 +1,65 @@
+C51 COMPILER V9.02   STATE_POWERCQT                                                        05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE STATE_POWERCQT
+OBJECT MODULE PLACED IN state_powerCqt.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE state_powerCqt.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "shared_general.h"
+   6          #include "shared_pwrs.h"
+   7          
+   8          #include "obdh_cqt.h"
+   9          
+  10          #include "state_util.h"
+  11          
+  12          // the function Cqt_handler() activates and deactivates State_powerCqt
+  13          char State_powerCqt(char* subtask) {
+  14   1        char release = 0; // default return choice: do not release state, unless specific set (see release = 1; 
+             -instruction below)
+  15   1        short length;
+  16   1        unsigned short channel;
+  17   1        switch (*subtask) {
+  18   2        case 0:
+  19   2          if (g_cqtInfo.state == cqt_requestPowerUp) {
+  20   3            channel = CHANNEL_MASK_CQT;
+  21   3            StateUtil_pokeSetXdata(PWRS_ADDRESS, XDATA_PWRS_CH_EXTREQON_OFFSET, sizeof channel, &channel);
+  22   3            ++*subtask;
+  23   3          } else if (g_cqtInfo.state == cqt_requestPowerDown) {
+  24   3            ES0 = 0;
+  25   3            channel = CHANNEL_MASK_CQT;
+  26   3            StateUtil_pokeSetXdata(PWRS_ADDRESS, XDATA_PWRS_CH_EXTREQOFF_OFFSET, sizeof channel, &channel);
+  27   3            ++*subtask;
+  28   3          } else
+  29   2            release = 1;
+  30   2          break;
+  31   2        case 1:
+  32   2          if (StateUtil_peek(&length, &release) == reply_success) {
+  33   3            ES0 = g_cqtInfo.state == cqt_requestPowerUp; // enable / disable serial port // TODO still to compil
+             -e/flash/test the line above
+  34   3            ++g_cqtInfo.state; // nasty exploit: simply advance g_cqtInfo.state
+  35   3            release = 1;
+  36   3          }
+  37   2          break;
+  38   2        }
+  39   1        return release;
+  40   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    263    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      8    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

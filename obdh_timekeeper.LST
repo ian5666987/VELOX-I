@@ -1,0 +1,48 @@
+C51 COMPILER V9.02   OBDH_TIMEKEEPER                                                       05/20/2014 11:03:52 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_TIMEKEEPER
+OBJECT MODULE PLACED IN obdh_timekeeper.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_timekeeper.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <string.h>
+   4          
+   5          #include "Velox_uptime.h"
+   6          #include "Velox_calendar.h"
+   7          
+   8          #include "mccif_xdata.h"
+   9          
+  10          #include "shared_obdh.h"
+  11          
+  12          #include "obdh_timekeeper.h"
+  13          
+  14          void Timekeeper_init() {
+  15   1        memset(&g_timekeeper, 0, sizeof g_timekeeper);
+  16   1        g_timekeeper.control = timekeeper_setRtcThenRead; // gnd station can switch to readAsMaster mode
+  17   1      }
+  18          
+  19          // to be called every second
+  20          void Timekeeper_handler() {
+  21   1        switch (g_timekeeper.control) {
+  22   2        default:
+  23   2          break;
+  24   2        }
+  25   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     30    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

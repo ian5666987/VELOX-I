@@ -1,0 +1,50 @@
+C51 COMPILER V9.02   C8051_DELAY                                                           05/20/2014 11:03:50 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE C8051_DELAY
+OBJECT MODULE PLACED IN C8051_delay.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE C8051_delay.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          
+   5          #include "C8051_oscillator.h"
+   6          
+   7          #define DELAY_SYSCLK_FACTOR    2.2605613425e-8   // 1 / 22118400.0 = 4.52112268e-8 ->  / 2  -> 2.260561342
+             -5e-8
+   8          // Delay functions design to delay by 1us. Call Format : delay_us(Number)
+   9          // function: delay for (l_us_us_count) micro-seconds
+  10          // note: l_us_us_count = l_us_us_count/2;
+  11          // this estimation is gotten by testing the delay using
+  12          // an oscilloscope for many inputs of l_us_us_count, and provides
+  13          // a rough estimate of doing micro-seconds delay
+  14          // Actual delay is 57% of the specified delay. (20s finished in 11.4s)
+  15          // with 24.5MHz system clock, it is expected to be 90%. (20s finished in 18s)
+  16          // with 22.1184MHz system clock, it is expected to be 99.75% (20s finished in 19.95s) 
+  17          // So, the delay is now adjusted using some calculation 
+  18          void Delay_us(unsigned short l_us_us_count) {
+  19   1        float factor = Oscillator_getSystemClock() * DELAY_SYSCLK_FACTOR;
+  20   1        factor *= l_us_us_count;
+  21   1        l_us_us_count = 65534 < factor ? 65535 : factor;
+  22   1        while (l_us_us_count)
+  23   1          --l_us_us_count;
+  24   1      }
+  25          
+  26          // for delay in milli seconds use the function Delay_blockMs in Velox_delay
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    178    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      6    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

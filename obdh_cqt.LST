@@ -1,0 +1,200 @@
+C51 COMPILER V9.02   OBDH_CQT                                                              05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE OBDH_CQT
+OBJECT MODULE PLACED IN obdh_cqt.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE obdh_cqt.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051F120.h>
+   4          #include <string.h>
+   5          
+   6          #include "Velox_checksum.h"
+   7          #include "Velox_delay.h"
+   8          #include "Velox_state.h"
+   9          #include "Velox_uart.h"
+  10          
+  11          #include "shared_general.h"
+  12          #include "shared_obdh.h"
+  13          
+  14          #include "hash_blob.h"
+  15          
+  16          #include "obdh_constant.h"
+  17          #include "obdh_cqt.h"
+  18          #include "obdh_globalvariables.h"
+  19          #include "obdh_recon.h"
+  20          
+  21          extern short g_s_BinaryId;
+  22          extern char g_c_BinaryType;
+  23          extern short g_us_BinaryFrame;
+  24          extern char g_c_BinaryContent[CQT_RAWDATA];
+  25          
+  26          #define CQT_FRAME_LIMIT      1400
+  27          #define CQT_BYTES_LIMIT    248200L    // (1400*213+50000) Allow 50kB of "trash" bytes
+  28          // ---
+  29          
+  30          // function called once before entering the main loop to initialize the most important variables
+  31          void Cqt_init() {
+  32   1        memset(&g_cqtInfo, 0, sizeof g_cqtInfo);
+  33   1        g_cqtInfo.runtime.delay = 1200; // 20 minutes
+  34   1        g_cqtInfo.haltBelow = 50; // mA
+  35   1        g_cqtInfo.txWait = 25; // ms to wait for entire frame to arrive
+  36   1        g_cqtInfo.address = 0x10;
+  37   1        g_cqtInfo.state = cqt_idle; // initialize CQT handler not to do anything unless specified otherwise
+  38   1        g_c_BinaryType = blobtype_cqt;
+  39   1      }
+  40          
+  41          // private function
+  42          void Cqt_clearRxBuffer() {
+  43   1        unsigned char count;
+  44   1        char value;
+  45   1        for (count = 0; count < CQT_UART_RX_SIZE; ++count)
+  46   1          if (Uart_pollChars(CQT_UART, &value, 1)) {
+  47   2            Uart_advance(CQT_UART, 1);
+  48   2            ++g_cqtInfo.byteCount;
+  49   2          } else
+  50   1            break;
+  51   1      }
+  52          
+  53          void Cqt_startUp() {
+  54   1        ++g_s_BinaryId; // ideally this is incremented by one for each time we switch on cqt and never be the sa
+             -me during all the mission. However, this can also be set by the gnd station
+C51 COMPILER V9.02   OBDH_CQT                                                              05/20/2014 11:03:51 PAGE 2   
+
+  55   1        g_us_BinaryFrame = 0; // incremented after a valid frame is stored
+  56   1        // ---
+  57   1        g_cqtInfo.byteCount = 0; // defined in the obdh_globalvariables.c, just to count the total number of byt
+             -es received from CQT. We are not interested to know the total number of bytes received.
+  58   1        g_cqtInfo.framesRejected = 0; // this is to limit the no of stored frame for the CQT
+  59   1        Runtime_fromNow(&g_cqtInfo.runtime);
+  60   1      }
+  61          
+  62          // 0x10 0x00 GET_FRAME (for retry in case of some fault)
+  63          // 0x10 0x01 ACK_FRAME
+  64          void Cqt_sendCommand(char valid) {
+  65   1        Uart_putChars(CQT_UART, &g_cqtInfo.address, 1); // the address is now a global variable, can be changed 
+             -by CQT
+  66   1        Uart_putChars(CQT_UART, &valid, 1); // if valid == 0 -> GET_FRAME, otherwise ACK_FRAME
+  67   1      }
+  68          
+  69          // function advances uart buffer by CQT_RAWDATA_AND_CRC number of bytes
+  70          // then, performs crc check
+  71          // if crc check is positive, the frame is stored on the sd card
+  72          // the result of the crc check is returned
+  73          char Cqt_processFrame() {
+  74   1        char valid;
+  75   1        short length;
+  76   1        Uart_advance(CQT_UART, CQT_RAWDATA_AND_CRC);
+  77   1        g_cqtInfo.byteCount += CQT_RAWDATA_AND_CRC;
+  78   1        Cqt_clearRxBuffer();
+  79   1        // ---
+  80   1        valid = Checksum_isValid(&g_c_BinaryContent, CQT_RAWDATA_AND_CRC); // check if the checksum is valid
+  81   1        if (valid) {
+  82   2          length = Mccif_formatContent(XDATA_OBDH_CQT_OFFSET, XDATA_OBDH_CQT_LENGTH, xdata_txbuffer);
+  83   2          ES0 = 0; // disable uart0 to rule out cqt from messing with the spi process
+  84   2          Hash_putBlob(xdata_txbuffer, length); // commit frame to Hash_putBlob, it will internally prevent othe
+             -r payload data from being deleted
+  85   2          ES0 = 1; // re-enable uart0
+  86   2          Recon_debugPrint(xdata_txbuffer, length);
+  87   2          ++g_us_BinaryFrame;
+  88   2        } else
+  89   1          ++g_cqtInfo.framesRejected;
+  90   1        return valid;
+  91   1      }
+  92          
+  93          extern Statetask g_statetask_powerCqt;
+  94          
+  95          // cqt sends content and checksum. the binary header 2+1+2 is defined by obdh.
+  96          void Cqt_handler() {
+  97   1        switch (g_cqtInfo.state) {
+  98   2        case cqt_idle:
+  99   2          break;
+ 100   2        case cqt_requestPowerUp:
+ 101   2          g_statetask_powerCqt.task.mode = timertask_repeated;
+ 102   2          // pwrsHk state takes over cqt control, next state => cqt_powerUpGiven
+ 103   2          break;
+ 104   2        case cqt_powerUpGiven:
+ 105   2          g_statetask_powerCqt.task.mode = timertask_disabled;
+ 106   2          Timertask_setExecuteOnce(&g_cqtInfo.task, 8000); // check 5 sec from now, if channel status of cqt is 
+             -still up
+ 107   2          g_cqtInfo.state = cqt_confirmStable;
+ 108   2          break;
+ 109   2        case cqt_confirmStable:
+ 110   2          if (Timertask_isReady(&g_cqtInfo.task)) // after 10 sec
+ 111   2            if (g_us_obdh_channel_status & CHANNEL_MASK_CQT) { // check if cqt channel is really on
+ 112   3              Cqt_startUp(); // proceed with cqt mission
+C51 COMPILER V9.02   OBDH_CQT                                                              05/20/2014 11:03:51 PAGE 3   
+
+ 113   3              Cqt_clearRxBuffer();
+ 114   3              g_cqtInfo.state = cqt_listen;
+ 115   3            } else
+ 116   2              g_cqtInfo.state = cqt_requestPowerDown; // fault must have occurred, mission impossible
+ 117   2          break;
+ 118   2        case cqt_listen:
+ 119   2          if (Uart_pollChars(CQT_UART, &g_c_BinaryContent, 1)) // is there at least one byte received?
+ 120   2            if (Uart_pollChars(CQT_UART, &g_c_BinaryContent, CQT_RAWDATA_AND_CRC)) // is there are CQT_CONTENT b
+             -ytes available
+ 121   2              Cqt_sendCommand(Cqt_processFrame());
+ 122   2            else {
+ 123   3              Timertask_setExecuteOnce(&g_cqtInfo.task, g_cqtInfo.txWait); // if there is not enough content, de
+             -lay and later check again // 211 * 9 / 115200 => 16.48 ms
+ 124   3              g_cqtInfo.state = cqt_delayedRx;
+ 125   3            }
+ 126   2          if (g_cqtInfo.current < g_cqtInfo.haltBelow || // normal condition: cqt powers down internally, and ob
+             -dh notices that via the current reading
+ 127   2              Runtime_hasExpired(&g_cqtInfo.runtime) || // fault condition: timeout e.g. after 20 min of operati
+             -on
+ 128   2              CQT_FRAME_LIMIT <= g_us_BinaryFrame || // fault condition: total limit of frames reached
+ 129   2              CQT_BYTES_LIMIT <= g_cqtInfo.byteCount) // fault condition: total limit of bytes received
+ 130   2            g_cqtInfo.state = cqt_requestPowerDown;
+ 131   2          break;
+ 132   2        case cqt_delayedRx:
+ 133   2          if (Timertask_isReady(&g_cqtInfo.task)) { // if the timertask is ready, listen one more time
+ 134   3            if (Uart_pollChars(CQT_UART, &g_c_BinaryContent, CQT_RAWDATA_AND_CRC)) // is there are CQT_CONTENT b
+             -ytes available
+ 135   3              Cqt_sendCommand(Cqt_processFrame());
+ 136   3            else { // insufficient bytes at this point
+ 137   4              Cqt_clearRxBuffer();
+ 138   4              ++g_cqtInfo.framesRejected;
+ 139   4              Cqt_sendCommand(0);
+ 140   4            }
+ 141   3            g_cqtInfo.state = cqt_listen;
+ 142   3          }
+ 143   2          break;
+ 144   2        case cqt_requestPowerDown:
+ 145   2          g_statetask_powerCqt.task.mode = timertask_repeated;
+ 146   2          // pwrsHk state takes over cqt control, next state => cqt_powerDownGiven
+ 147   2          break;
+ 148   2        case cqt_powerDownGiven:
+ 149   2          if (g_us_obdh_channel_status & CHANNEL_MASK_CQT) // channel is still high
+ 150   2            g_cqtInfo.state = cqt_requestPowerDown; // retry power off signal again
+ 151   2          else {
+ 152   3            g_statetask_powerCqt.task.mode = timertask_disabled; // power off was successful
+ 153   3            Cqt_clearRxBuffer();
+ 154   3            g_cqtInfo.state = cqt_idle;
+ 155   3          }
+ 156   2          break;
+ 157   2        default:
+ 158   2          g_cqtInfo.state = cqt_idle; //back to idle state whenever unknown state is detected
+ 159   2          break;
+ 160   2        }
+ 161   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    839    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      6    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+C51 COMPILER V9.02   OBDH_CQT                                                              05/20/2014 11:03:51 PAGE 4   
+
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

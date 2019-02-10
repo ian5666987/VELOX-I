@@ -1,0 +1,103 @@
+C51 COMPILER V9.02   HASH_BLOB                                                             05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE HASH_BLOB
+OBJECT MODULE PLACED IN hash_blob.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE hash_blob.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          
+   5          #include "sdcard_redundant.h"
+   6          
+   7          #include "mccif_spy.h"
+   8          
+   9          #include "hash_blob.h"
+  10          
+  11          #include "shared_general.h"
+  12          
+  13          #define   HASH_NIRVANA           0L
+  14          
+  15          #define   HASH_CAMERA_MOD       16    // capacity is for 16 camera images (instead of 15 previously)
+  16          #define   HASH_CAMERA_SIZE    1000
+  17          
+  18          #define   HASH_GPS_MOD           4    // capacity is for 4 gps log, separate for ascii and binary (total 8
+             -)
+  19          #define   HASH_GPS_SIZE        300
+  20          
+  21          unsigned short code local_blobOffset[9] = { //
+  22              0, // 0 ---> invalid
+  23                  10, // 1 thumb max 4000 B
+  24                  30, // 2 fullres max 200000 kB
+  25                  990, // 3 raw max 1542 B
+  26                  16000, // 4 cqt
+  27                  17400, // 5 gps asc (at most 297 frames) + 1200
+  28                  18600, // 6 gps bin (at most 297 frames) + 1200
+  29                  19800, // 7 xbee 2200 frames (for 36 min -> 1 frame per second)
+  30                  22000 }; // 8 <--- number to mark end of xbee domain
+  31          
+  32          #if HASH_CAMERA_MOD * HASH_CAMERA_SIZE != 16000
+              #error "out of sync: cqt offset"
+              #endif
+  35          
+  36          unsigned long Hash_addressBlob(unsigned short index, char type, unsigned short count) {
+  37   1        unsigned long address;
+  38   1        if (blobtype_cam_thumb <= type && type <= blobtype_xbee_nsat) { // check if valid type
+  39   2          address = local_blobOffset[type] + count;
+  40   2          if (address < local_blobOffset[type + 1]) { // address does not exceed boundary
+  41   3            if (type <= blobtype_cam_raw) // if type is related to camera ...
+  42   3              address += (index % HASH_CAMERA_MOD) * HASH_CAMERA_SIZE; // ... map into one of 16 segments
+  43   3            else if (blobtype_gps_ascii <= type && type <= blobtype_gps_binary) // if type is related to gps ...
+  44   3              address += (index % HASH_GPS_MOD) * HASH_GPS_SIZE; // ... map into one of 4 segments
+  45   3            address *= g_hashBlob.copies;
+  46   3            address += g_hashBlob.offset;
+  47   3            return address;
+  48   3          }
+  49   2        }
+  50   1        return HASH_NIRVANA;
+  51   1      }
+  52          
+  53          // returns true only if address is valid
+  54          char Hash_putBlob(void* buffer, short length) {
+C51 COMPILER V9.02   HASH_BLOB                                                             05/20/2014 11:03:51 PAGE 2   
+
+  55   1        unsigned short index;
+  56   1        char type;
+  57   1        short count;
+  58   1        unsigned long address;
+  59   1        index = Mccif_getBlobIndex(buffer);
+  60   1        type = Mccif_getBlobType(buffer);
+  61   1        count = Mccif_getBlobCount(buffer);
+  62   1        address = Hash_addressBlob(index, type, count);
+  63   1        if (address != HASH_NIRVANA)
+  64   1          return SDred_write(address, buffer, length, g_hashBlob.copies);
+  65   1        return 0;
+  66   1      }
+  67          
+  68          // returns true only if address is valid and content has correct checksum
+  69          char Hash_getBlob(unsigned short index, char type, unsigned short count, void* buffer, short length) {
+  70   1        unsigned long address;
+  71   1        char success;
+  72   1        address = Hash_addressBlob(index, type, count);
+  73   1        success = address != HASH_NIRVANA;
+  74   1        if (success)
+  75   1          success = SDred_read(address, buffer, length, g_hashBlob.copies);
+  76   1        return success;
+  77   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    869    ----
+   CONSTANT SIZE    =     18    ----
+   XDATA SIZE       =     38    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,57 @@
+C51 COMPILER V9.02   MCCIF_STREAM                                                          05/20/2014 11:03:51 PAGE 1   
+
+
+C51 COMPILER V9.02, COMPILATION OF MODULE MCCIF_STREAM
+OBJECT MODULE PLACED IN mccif_stream.OBJ
+COMPILER INVOKED BY: C:\Keil\C51\BIN\C51.EXE mccif_stream.c LARGE OPTIMIZE(0,SPEED) BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          // code by ntu ael
+   2          
+   3          #include <c8051f120.h>
+   4          #include <string.h>
+   5          
+   6          #include "Velox_checksum.h"
+   7          #include "Velox_uart.h"
+   8          
+   9          #include "mccif_xdata.h"
+  10          
+  11          void Mccif_downlinkStream(short index, short count, short length, void* msg) {
+  12   1        char content[10];
+  13   1        char* buffer = (char*) msg;
+  14   1        unsigned short l_us_crc = 0;
+  15   1        content[0] = 'S';
+  16   1        content[1] = 'T';
+  17   1        content[2] = 'R';
+  18   1        content[3] = 'E';
+  19   1        content[4] = index >> 8; // length hi
+  20   1        content[5] = index; // length lo
+  21   1        content[6] = count >> 8; // length hi
+  22   1        content[7] = count; // length lo
+  23   1        content[8] = length >> 8; // length hi
+  24   1        content[9] = length; // length lo
+  25   1      
+  26   1        l_us_crc = Checksum_update(content, sizeof content, l_us_crc);
+  27   1        Uart_putChars(mccif_port, content, sizeof content);
+  28   1      
+  29   1        l_us_crc = Checksum_update(buffer, length, l_us_crc);
+  30   1        Uart_putChars(mccif_port, buffer, length);
+  31   1      
+  32   1        l_us_crc = Checksum_publish(l_us_crc);
+  33   1        Uart_putChars(mccif_port, &l_us_crc, 2);
+  34   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    358    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =     24    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
